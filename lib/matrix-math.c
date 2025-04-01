@@ -22,12 +22,12 @@ Matrix *add_Mat(Matrix *mat1, Matrix *mat2) {
   return result;
 }
 
-/**
- * Performs matrix multiplication (dot product) of two matrices
- * mat1: m x n matrix (left operand)
- * mat2: n x p matrix (right operand)
- * Returns: Pointer to new m x p matrix (must be freed by caller)
- */
+/*
+   Performs matrix multiplication (dot product) of two matrices
+   mat1: m x n matrix (left operand)
+   mat2: n x p matrix (right operand)
+   Returns: Pointer to new m x p matrix (must be freed by caller)
+*/
 Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
   if (mat1->columns != mat2->rows) {
     fprintf(stderr,
@@ -68,7 +68,7 @@ void print_Matrix(Matrix *matrix) {
   printf("--\n");
   for (int i = 0; i < matrix->rows; i++) {
     for (int j = 0; j < matrix->columns; j++) {
-      printf("%d, ", matrix->data[i][j]);
+      printf("%.2f, ", matrix->data[i][j]);
     }
     printf("\n");
   }
@@ -85,14 +85,14 @@ Matrix *init_Matrix(int rows, int columns) {
   mat->rows = rows;
   mat->columns = columns;
 
-  mat->data = (int **)malloc(rows * sizeof(int *));
+  mat->data = (double **)malloc(rows * sizeof(double *));
   if (!mat->data) {
     fprintf(stderr, "ERROR: matrix malloc failed\n");
     exit(1);
   }
 
   for (int i = 0; i < rows; i++) {
-    mat->data[i] = (int *)malloc(columns * sizeof(int));
+    mat->data[i] = (double *)malloc(columns * sizeof(double));
     if (!mat->data[i]) {
       fprintf(stderr, "ERROR: matrix malloc failed\n");
       exit(1);
