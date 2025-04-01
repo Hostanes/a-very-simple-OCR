@@ -1,14 +1,18 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <time.h>
 
-#define UPPER_BOUND 100
-#define LOWER_BOUND 1
+#include "vector-math.h"
 
-typedef struct {
-  int rows, columns;
-  int **data;
-} Matrix;
+Matrix add_Mat(Matrix mat1, Matrix mat2) {
+
+  if (mat1.rows != mat2.rows || mat1.columns != mat2.columns) {
+    fprintf(stderr, "ERROR: matrix add: matrix dimensions dont match");
+  }
+
+  Matrix result = init_Matrix(mat1.rows, mat1.columns);
+
+
+
+  return result;
+}
 
 /*
   randomize matrix of size rows x columns
@@ -38,21 +42,21 @@ void print_Matrix(Matrix matrix) {
   allocate a matrix of size rows x columns
   returns a Struct Matrix
 */
-Matrix matrix_Init(int rows, int columns) {
+Matrix init_Matrix(int rows, int columns) {
   Matrix mat;
   mat.rows = rows;
   mat.columns = columns;
 
   mat.data = (int **)malloc(rows * sizeof(int *));
   if (!mat.data) {
-    fprintf(stderr, "matrix malloc failed\n");
+    fprintf(stderr, "ERROR: matrix malloc failed\n");
     exit(1);
   }
 
   for (int i = 0; i < rows; i++) {
     mat.data[i] = (int *)malloc(columns * sizeof(int));
     if (!mat.data[i]) {
-      fprintf(stderr, "matrix malloc failed\n");
+      fprintf(stderr, "ERROR: matrix malloc failed\n");
       exit(1);
     }
 
@@ -77,10 +81,10 @@ int main() {
 
   int m_rows = 5;
   int m_cols = 10;
-  Matrix mat1 = matrix_Init(m_rows, m_cols);
+  Matrix mat1 = init_Matrix(m_rows, m_cols);
 
   int v_rows = m_cols;
-  Matrix vec1 = matrix_Init(v_rows, 1);
+  Matrix vec1 = init_Matrix(v_rows, 1);
 
   randomize_Matrix(mat1);
   randomize_Matrix(vec1);
