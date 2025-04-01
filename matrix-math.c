@@ -1,5 +1,5 @@
 
-#include "vector-math.h"
+#include "matrix-math.h"
 
 Matrix add_Mat(Matrix mat1, Matrix mat2) {
 
