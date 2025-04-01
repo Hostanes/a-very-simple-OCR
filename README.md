@@ -1,6 +1,9 @@
+```
+ An OCR neural network using MNIST dataset written in C from scratch
+ Trained to identify handwritten single digit numerals from 0 to 9
+```
+
 # a-very-simple-OCR
-
-
 
 ### Neural Network Architecture
 
@@ -30,3 +33,29 @@ The **loss** (cross-entropy) compares $a3$ to the true label $y$.
 ### Backward Propagation
 
 \[TODO]
+
+
+## Math Library
+
+`matrix-math.h` includes functions to initialize, add, and dot product generic 2D matricies
+
+
+```
+ typedef struct {
+   int rows, columns;
+   double **data;
+ } Matrix;
+```
+Matrix struct encapsulates double data and size information
+
+```
+ Matrix *add_Mat(Matrix *mat1, Matrix *mat2)
+```
+Adds mat1 and mat2, returns pointer to `Matrix *result`.
+Exits with error code if matricies are not of same size.
+
+```
+ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2)
+```
+Calculates dot product of mat1 and mat2, returns pointer to `Matrix *result`.
+Exits with error code if matricies are not of correct sizes mxn and nxp.
