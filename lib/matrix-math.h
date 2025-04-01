@@ -37,4 +37,6 @@ void print_Matrix(Matrix *matrix);
 */
 Matrix *add_Mat(Matrix *mat1, Matrix *mat2);
 
+Matrix *dot_Mat(Matrix *mat1, Matrix *mat2);
+
 #endif /* MATRIX_H */

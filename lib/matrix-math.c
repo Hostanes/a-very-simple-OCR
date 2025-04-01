@@ -22,6 +22,35 @@ Matrix *add_Mat(Matrix *mat1, Matrix *mat2) {
   return result;
 }
 
+/**
+ * Performs matrix multiplication (dot product) of two matrices
+ * mat1: m x n matrix (left operand)
+ * mat2: n x p matrix (right operand)
+ * Returns: Pointer to new m x p matrix (must be freed by caller)
+ */
+Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
+  if (mat1->columns != mat2->rows) {
+    fprintf(stderr,
+            "ERROR: matrix multiply: inner dimensions don't match (%d != %d)\n",
+            mat1->columns, mat2->rows);
+    exit(1);
+  }
+
+  Matrix *result = init_Matrix(mat1->rows, mat2->columns);
+
+  for (int i = 0; i < mat1->rows; i++) {
+    for (int j = 0; j < mat2->columns; j++) {
+      int sum = 0;
+      for (int k = 0; k < mat1->columns; k++) {
+        sum += mat1->data[i][k] * mat2->data[k][j];
+      }
+      result->data[i][j] = sum;
+    }
+  }
+
+  return result;
+}
+
 /*
   randomize matrix of size rows x columns
   values are randomized between values LOWER_BOUND and UPPER_BOUND
@@ -84,4 +113,3 @@ void matrix_Free(Matrix *mat) {
   free(mat->data);
   free(mat);
 }
-
