@@ -5,17 +5,13 @@
 #define UPPER_BOUND 100
 #define LOWER_BOUND 1
 
-
-
-
-
-
+void add_Vector_Vector() {}
 
 /*
   randomize matrix of size rows x columns
   values are randomized between values LOWER_BOUND and UPPER_BOUND
 */
-void randomize_matrix(int rows, int columns, int matrix[rows][columns]) {
+void randomize_Matrix(int rows, int columns, int matrix[rows][columns]) {
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       matrix[i][j] = rand() % (UPPER_BOUND - LOWER_BOUND + 1) + LOWER_BOUND;
@@ -23,29 +19,15 @@ void randomize_matrix(int rows, int columns, int matrix[rows][columns]) {
   }
 }
 
-/*
-  randomize vector of length `size`
-  values are randomized between values LOWER_BOUND and UPPER_BOUND
-*/
-void randomize_vector(int size, int matrix[size]) {
-  for (int i = 0; i < size; i++) {
-    matrix[i] = rand() % (UPPER_BOUND - LOWER_BOUND + 1) + LOWER_BOUND;
-  }
-}
-
-void print_matrix(int rows, int columns, int matrix[rows][columns]) {
+void print_Matrix(int rows, int columns, int matrix[rows][columns]) {
+  printf("--\n");
   for (int i = 0; i < rows; i++) {
     for (int j = 0; j < columns; j++) {
       printf("%d, ", matrix[i][j]);
     }
     printf("\n");
   }
-}
-
-void print_vector(int size, int vector[size]) {
-  for (int i = 0; i < size; i++) {
-    printf("%d\n", vector[i]);
-  }
+  printf("--\n");
 }
 
 int main() {
@@ -57,13 +39,13 @@ int main() {
   int matrix[m_rows][m_cols];
 
   int v_cols = m_cols;
-  int vector[v_cols];
+  int vector[v_cols][1];
 
-  randomize_matrix(m_rows, m_cols, matrix);
-  print_matrix(m_rows, m_cols, matrix);
+  randomize_Matrix(m_rows, m_cols, matrix);
+  print_Matrix(m_rows, m_cols, matrix);
 
   printf("\n");
 
-  randomize_vector(m_rows, vector);
-  print_vector(m_rows, vector);
+  randomize_Matrix(v_cols, 1, vector);
+  print_Matrix(v_cols, 1, vector);
 }
