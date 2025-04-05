@@ -24,6 +24,28 @@ Matrix *add_Mat(Matrix *mat1, Matrix *mat2) {
 }
 
 /*
+  Performs element wise multiplication for 2 matricies of equal dimensions
+  mat1: m x n matrix
+  mat2: k x p matrix
+  Returns: pointer to Matrix struct result
+*/
+Matrix *multiply_Mat(Matrix *mat1, Matrix *mat2) {
+
+  if (mat1->rows != mat2->rows || mat1->columns != mat2->columns) {
+    fprintf(stderr, "ERROR: matrix add: matrix dimensions dont match");
+    exit(1);
+  }
+  Matrix *result = init_Matrix(mat1->rows, mat1->columns);
+  for (int rows = 0; rows < mat1->rows; rows++) {
+    for (int columns = 0; columns < mat1->columns; columns++) {
+      result->data[rows][columns] =
+          mat1->data[rows][columns] + mat2->data[rows][columns];
+    }
+  }
+  return result;
+}
+
+/*
    Performs matrix multiplication (dot product) of two matrices
    mat1: m x n matrix (left operand)
    mat2: n x p matrix (right operand)

@@ -36,4 +36,6 @@ int main() {
   Matrix *dot_result = dot_Mat(mat1, mat3);
   printf("result of matrix dot product:\n");
   print_Matrix(dot_result);
+
+  return 0;
 }
