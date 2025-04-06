@@ -1,6 +1,8 @@
 ```
  An OCR neural network using MNIST dataset written in C from scratch
  Trained to identify handwritten single digit numerals from 0 to 9
+
+ Will include both serial and parallel versions of the code
 ```
 
 # a-very-simple-OCR
