@@ -1,4 +1,3 @@
-
 #include "matrix-math.h"
 
 /*
@@ -39,7 +38,7 @@ Matrix *multiply_Mat(Matrix *mat1, Matrix *mat2) {
   for (int rows = 0; rows < mat1->rows; rows++) {
     for (int columns = 0; columns < mat1->columns; columns++) {
       result->data[rows][columns] =
-          mat1->data[rows][columns] + mat2->data[rows][columns];
+          mat1->data[rows][columns] * mat2->data[rows][columns];
     }
   }
   return result;
@@ -54,7 +53,7 @@ Matrix *multiply_Mat(Matrix *mat1, Matrix *mat2) {
 Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
   if (mat1->columns != mat2->rows) {
     fprintf(stderr,
-            "ERROR: matrix multiply: inner dimensions don't match (%d != %d)\n",
+            "ERROR: Dot Product: inner dimensions don't match (%d != %d)\n",
             mat1->columns, mat2->rows);
     exit(1);
   }
@@ -63,7 +62,7 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
 
   for (int i = 0; i < mat1->rows; i++) {
     for (int j = 0; j < mat2->columns; j++) {
-      int sum = 0;
+      double sum = 0;
       for (int k = 0; k < mat1->columns; k++) {
         sum += mat1->data[i][k] * mat2->data[k][j];
       }
@@ -81,8 +80,7 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
 void randomize_Matrix(Matrix *matrix) {
   for (int i = 0; i < matrix->rows; i++) {
     for (int j = 0; j < matrix->columns; j++) {
-      matrix->data[i][j] =
-          rand() % (UPPER_BOUND - LOWER_BOUND + 1) + LOWER_BOUND;
+      matrix->data[i][j] = (double )rand() / RAND_MAX * 1;
     }
   }
 }
