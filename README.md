@@ -33,6 +33,9 @@ The sizes of the Hidden layers $H1$ 128, and $H2$ 64, are arbitrary
 The **loss** (cross-entropy) compares $a3$ to the true label $y$.
 
 ### Backward Propagation
+Backwward propagation is the process of fine-tuning weights according to the loss computed from previous epochs.
+1. **Gradient Calculation:**The loss derivaties of each layer is computed, starting from the output layer and moving backward.
+2. **Weight updates:**Weights are updated using gradient descent according to the calculated gradients, aiming to minimize the loss.
 
 \[TODO]
 
