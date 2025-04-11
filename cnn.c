@@ -46,11 +46,6 @@ void add_Layer(CNNModel_t *model, LayerConfig_t config) {
   model->num_layers++;
 }
 
-void update_Weights(CNNModel_t *model) {
-  //
-  //
-}
-
 /*
   Propagation
 */
@@ -83,10 +78,16 @@ void forward_Pass(CNNModel_t *model, Matrix_t *input) {
     current = current->next;
   }
 }
-
+/*
+  applies convolution and defaults to ReLU at the end
+  TODO add multiple activation function support
+*/
 void conv2d_Forward(CNNLayer_t *layer, Matrix_t *input) {
-  //
 
+  if (!layer || !input || !layer->params.weights || !layer->params.biases) {
+    fprintf(stderr, "Error: Null parameters in conv2d_Forward\n");
+    return;
+  }
   int padding = layer->config.padding;
   int kernel_size = layer->config.kernel_size;
 
@@ -147,9 +148,13 @@ void conv2d_Forward(CNNLayer_t *layer, Matrix_t *input) {
   relu_forward(layer->cache.activated);
 }
 
+/*
+  Basic 2x2 max pooling
+  TODO actually understand how this works, I just copy pasted it
+*/
 void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input) {
-  const int pool_size = 2; // Standard 2x2 pooling
-  const int stride = 2;    // Typically same as pool size
+  const int pool_size = 2;
+  const int stride = 2;
 
   // Calculate output dimensions
   const int out_h = input->rows / pool_size;
@@ -196,6 +201,20 @@ void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input) {
   }
 }
 
+/*
+  basic dense (fully connected) neural network function
+  1. w.x + b = c
+  2. output = act(c)
+
+  w: weight matrix
+  x: input vector
+  b: bias
+  act: activation function
+
+  TODO add support for more channels.
+  DNN might only take 1d vectors, so maybe current
+  approach for flattening multi dimensional mats is correct?
+*/
 void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {
   int input_size = input->columns; // assuming input shape is (1, input_size, 1)
   int output_size =
@@ -223,6 +242,10 @@ void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {
   }
 }
 
+/*
+  applies ReLU to an entire matrix
+  output = max(0,x_i)
+*/
 void relu_forward(Matrix_t *mat) {
   // Check for null pointer
   if (!mat || !mat->data) {
@@ -239,6 +262,9 @@ void relu_forward(Matrix_t *mat) {
   }
 }
 
+/*
+  Applies softmax to input and placed into output matrix
+*/
 void softmax_forward(Matrix_t *input, Matrix_t *output) {
 
   float max_val = -FLT_MAX;
@@ -264,6 +290,10 @@ void softmax_forward(Matrix_t *input, Matrix_t *output) {
   }
 }
 
+/*
+  Flatten a multidimensional matrix
+  supports flattening multiple channels too!!
+*/
 void flatten_Forward(CNNLayer_t *layer, Matrix_t *input) {
   int flat_size = input->rows * input->columns * input->channels;
 
@@ -319,19 +349,218 @@ void backward_Pass(CNNModel_t *model, Matrix_t *target, float *loss) {
 }
 
 void conv2d_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
-  //
-  //
+  // Get layer parameters
+  int padding = layer->config.padding;
+  int kernel_size = layer->config.kernel_size;
+  Matrix_t *input = layer->cache.input;
+
+  // Initialize gradients if they don't exist
+  if (layer->params.weight_grads == NULL) {
+    layer->params.weight_grads = matrix_Copy(layer->params.weights);
+    zero_Init(layer->params.weight_grads);
+  }
+  if (layer->params.bias_grads == NULL) {
+    layer->params.bias_grads = matrix_Copy(layer->params.biases);
+    zero_Init(layer->params.bias_grads);
+  }
+
+  // Compute gradient of ReLU activation
+  Matrix_t *grad_act = matrix_Copy(grad_output);
+  for (int i = 0; i < grad_act->rows * grad_act->columns * grad_act->channels;
+       i++) {
+    if (layer->cache.output->data[i] <= 0) {
+      grad_act->data[i] = 0;
+    }
+  }
+
+  // Compute input gradient (∂L/∂X)
+  Matrix_t *grad_input =
+      create_Matrix(input->rows, input->columns, input->channels);
+  zero_Init(grad_input);
+
+  // Compute weight gradients (∂L/∂W) and bias gradients (∂L/∂B)
+  for (int f = 0; f < layer->config.filters; f++) {
+    for (int h = 0; h < grad_output->rows; h++) {
+      for (int w = 0; w < grad_output->columns; w++) {
+        float grad =
+            grad_act
+                ->data[(h * grad_output->columns + w) * grad_output->channels +
+                       f];
+
+        // Update bias gradient
+        layer->params.bias_grads->data[f] += grad;
+
+        // Compute weight gradients
+        for (int kh = 0; kh < kernel_size; kh++) {
+          for (int kw = 0; kw < kernel_size; kw++) {
+            for (int ch = 0; ch < input->channels; ch++) {
+              int h_in = h + kh - padding;
+              int w_in = w + kw - padding;
+
+              if (h_in >= 0 && h_in < input->rows && w_in >= 0 &&
+                  w_in < input->columns) {
+                int weight_idx =
+                    ((kh * kernel_size + kw) * input->channels + ch) *
+                        layer->config.filters +
+                    f;
+                int input_idx =
+                    (h_in * input->columns + w_in) * input->channels + ch;
+
+                // Accumulate weight gradient
+                layer->params.weight_grads->data[weight_idx] +=
+                    grad * input->data[input_idx];
+
+                // Accumulate input gradient
+                grad_input->data[input_idx] +=
+                    grad * layer->params.weights->data[weight_idx];
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Store input gradient for next layer
+  layer->cache.input = grad_input;
+  free_Matrix(grad_act);
 }
 
 void maxpool_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
-  //
-  //
+  Matrix_t *input = layer->cache.input;
+  Matrix_t *grad_input =
+      create_Matrix(input->rows, input->columns, input->channels);
+  zero_Init(grad_input);
+
+  const int pool_size = 2;
+
+  for (int c = 0; c < grad_output->channels; c++) {
+    for (int h = 0; h < grad_output->rows; h++) {
+      for (int w = 0; w < grad_output->columns; w++) {
+        // Get stored max positions
+        int out_idx =
+            (h * grad_output->columns + w) * grad_output->channels + c;
+        int max_h = layer->cache.pool_indicies->data[out_idx * 2];
+        int max_w = layer->cache.pool_indicies->data[out_idx * 2 + 1];
+
+        // Route gradient to max position
+        int in_idx = (max_h * input->columns + max_w) * input->channels + c;
+        grad_input->data[in_idx] = grad_output->data[out_idx];
+      }
+    }
+  }
+
+  layer->cache.input = grad_input;
 }
 
 void dense_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
-  //
-  //
+  Matrix_t *input = layer->cache.input;
+  int input_size = input->columns;
+  int output_size = layer->params.weights->rows;
+
+  // Initialize gradients if they don't exist
+  if (layer->params.weight_grads == NULL) {
+    layer->params.weight_grads = matrix_Copy(layer->params.weights);
+    zero_Init(layer->params.weight_grads);
+  }
+  if (layer->params.bias_grads == NULL) {
+    layer->params.bias_grads = matrix_Copy(layer->params.biases);
+    zero_Init(layer->params.bias_grads);
+  }
+
+  // Compute gradient of activation (ReLU)
+  Matrix_t *grad_act = matrix_Copy(grad_output);
+  if (layer->config.activation == RELU) {
+    for (int i = 0; i < grad_act->rows * grad_act->columns * grad_act->channels;
+         i++) {
+      if (layer->cache.output->data[i] <= 0) {
+        grad_act->data[i] = 0;
+      }
+    }
+  }
+
+  // Compute weight gradients (∂L/∂W)
+  for (int i = 0; i < input_size; i++) {
+    for (int o = 0; o < output_size; o++) {
+      int weight_idx = o * input_size + i;
+      layer->params.weight_grads->data[weight_idx] +=
+          grad_act->data[o] * input->data[i];
+    }
+  }
+
+  // Compute bias gradients (∂L/∂B)
+  for (int o = 0; o < output_size; o++) {
+    layer->params.bias_grads->data[o] += grad_act->data[o];
+  }
+
+  // Compute input gradients (∂L/∂X)
+  Matrix_t *grad_input = create_Matrix(1, input_size, 1);
+  zero_Init(grad_input);
+
+  for (int i = 0; i < input_size; i++) {
+    for (int o = 0; o < output_size; o++) {
+      int weight_idx = o * input_size + i;
+      grad_input->data[i] +=
+          grad_act->data[o] * layer->params.weights->data[weight_idx];
+    }
+  }
+
+  layer->cache.input = grad_input;
+  free_Matrix(grad_act);
 }
+
+void update_Weights(CNNModel_t *model) {
+  CNNLayer_t *layer = model->layers;
+  while (layer != NULL) {
+    if (layer->params.weight_grads != NULL &&
+        layer->params.bias_grads != NULL) {
+      // Update weights
+      for (int i = 0;
+           i < layer->params.weights->rows * layer->params.weights->columns *
+                   layer->params.weights->channels;
+           i++) {
+        layer->params.weights->data[i] -=
+            model->learning_rate * layer->params.weight_grads->data[i];
+      }
+
+      // Update biases
+      for (int i = 0;
+           i < layer->params.biases->rows * layer->params.biases->columns *
+                   layer->params.biases->channels;
+           i++) {
+        layer->params.biases->data[i] -=
+            model->learning_rate * layer->params.bias_grads->data[i];
+      }
+
+      // Reset gradients
+      zero_Init(layer->params.weight_grads);
+      zero_Init(layer->params.bias_grads);
+    }
+    layer = layer->next;
+  }
+}
+
+Matrix_t *cross_Entropy_Backward(Matrix_t *predicted, int true_class_index) {
+  Matrix_t *grad =
+      create_Matrix(predicted->rows, predicted->columns, predicted->channels);
+  for (int i = 0; i < predicted->columns; ++i) {
+    grad->data[i] = predicted->data[i]; // copy prediction
+  }
+  grad->data[true_class_index] -= 1.0f; // subtract 1 from correct class
+  return grad;
+}
+
+float cross_Entropy_Loss(Matrix_t *predicted, int true_class_index) {
+  float epsilon = 1e-7f; // Avoid log(0)
+  float predicted_prob = predicted->data[true_class_index];
+  if (predicted_prob < epsilon)
+    predicted_prob = epsilon;
+  return -logf(predicted_prob);
+}
+
+/*
+  Weight managment
+*/
 
 /*
   Using HE init
@@ -372,6 +601,8 @@ void random_Init(Matrix_t *mat, float min, float max) {
 
 void init_Weights(CNNModel_t *model) {
   CNNLayer_t *layer = model->layers;
+  int input_channels = 1;
+
   while (layer != NULL) {
     switch (layer->config.type) {
 
@@ -379,7 +610,7 @@ void init_Weights(CNNModel_t *model) {
       // Fan_in = kernel_size^2 * input_channels
       // Fan_out = kernel_size^2 * filters
       int fan_in = layer->config.kernel_size * layer->config.kernel_size *
-                   (layer == model->layers ? 1 : layer->cache.input->channels);
+                   input_channels;
       int fan_out = layer->config.kernel_size * layer->config.kernel_size *
                     layer->config.filters;
 

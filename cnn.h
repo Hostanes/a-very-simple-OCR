@@ -16,6 +16,7 @@ typedef struct {
   int channels;
 } Matrix_t;
 
+// TODO maybe move from enums to function hooks? PRO: less conditionals
 typedef enum {
   CONV_LAYER,
   MAXPOOL_LAYER,
@@ -115,6 +116,8 @@ void free_Matrix(Matrix_t *matrix);
 void train_Batch(CNNModel_t *model, Matrix_t *inputs, Matrix_t *targets,
                  int batch_size);
 void update_Weights(CNNModel_t *model);
+float cross_Entropy_Loss(Matrix_t *predicted, int true_class_index);
+Matrix_t *cross_Entropy_Backward(Matrix_t *predicted, int true_class_index);
 
 // Evaluation
 float calculate_accuracy(CNNModel_t *model, Matrix_t *test_inputs,

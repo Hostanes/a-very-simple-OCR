@@ -2,10 +2,8 @@
   unit tests for the functions:
   - conv2d_Forward
   - maxpool_Forward
-
-  what is checked is the cached value not the activated value
-  activated value being the one outputted by the activation function
-  in our case its ReLU
+  - flatten_Forward
+  - dense_Forward with ReLU and Softmax
 */
 
 #include "cnn.h"
@@ -14,6 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
+// TODO
 #define FLOAT_EQ(a, b) (fabs((a) - (b)) < 1e-6)
 
 void print_Matrix(Matrix_t *matrix) {
