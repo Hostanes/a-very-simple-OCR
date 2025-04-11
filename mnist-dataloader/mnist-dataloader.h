@@ -1,4 +1,3 @@
-
 /*
   A modified implementation of
   MNIST loader by Nuri Park - https://github.com/projectgalateia/mnist
@@ -159,3 +158,6 @@ cleanup:
 
 #endif /* USE_MNIST_LOADER */
 #endif /* __MNIST_H__ */
+
+ 
+   
