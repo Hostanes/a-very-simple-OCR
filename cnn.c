@@ -227,6 +227,27 @@ Matrix_t *create_Matrix(int rows, int cols, int channels) {
   return mat;
 }
 
+/*
+  Create a deep copy of a matrix
+  copied from src matrix
+  returns pointer to new matrix
+*/
+Matrix_t *matrix_Copy(Matrix_t *src) {
+  if (!src) {
+    fprintf(stderr, "Error: Cannot copy NULL matrix\n");
+    return NULL;
+  }
+
+  Matrix_t *dst = create_Matrix(src->rows, src->columns, src->channels);
+  if (!dst)
+    return NULL;
+
+  size_t num_bytes = src->rows * src->columns * src->channels * sizeof(float);
+  memcpy(dst->data, src->data, num_bytes);
+
+  return dst;
+}
+
 // Frees a matrix
 void free_Matrix(Matrix_t *matrix) {
   if (matrix != NULL) {
