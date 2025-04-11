@@ -1,6 +1,7 @@
 /*
-  unit tests for the function:
-  conv2d_Forward
+  unit tests for the functions:
+  - conv2d_Forward
+  - maxpool_Forward
 
   what is checked is the cached value not the activated value
   activated value being the one outputted by the activation function
@@ -15,7 +16,21 @@
 
 #define FLOAT_EQ(a, b) (fabs((a) - (b)) < 1e-6)
 
-void test_conv2d_forward() {
+void print_Matrix(Matrix_t *matrix) {
+  for (int c = 0; c < matrix->channels; c++) {
+    printf("Channel %d:\n", c);
+    for (int i = 0; i < matrix->rows; i++) {
+      for (int j = 0; j < matrix->columns; j++) {
+        int idx = (i * matrix->columns + j) * matrix->channels + c;
+        printf("%.2f ", matrix->data[idx]);
+      }
+      printf("\n");
+    }
+    printf("\n");
+  }
+}
+
+void test_forward() {
   printf("=== Running conv2d_Forward Tests ===\n");
 
   // Test 1: Identity kernel (should preserve input)
@@ -142,7 +157,50 @@ void test_conv2d_forward() {
     printf("PASSED\n");
   }
 
-  printf("All conv2d_Forward tests passed!\n\n");
+  // Test 5: Max Pooling 2x2 on 4x4 input
+  {
+    printf("------------------------\n");
+    printf("Test 5: Max Pooling 2x2...\n");
+
+    // Create 4x4 input with 1 channel
+    Matrix_t *input = create_Matrix(4, 4, 1);
+    float values[16] = {1, 3, 2, 1, 4, 6, 5, 2, 1, 2, 8, 9, 1, 0, 6, 7};
+    for (int i = 0; i < 16; i++) {
+      input->data[i] = values[i];
+    }
+
+    CNNLayer_t layer = {.config = {.type = MAXPOOL_LAYER}};
+
+    maxpool_Forward(&layer, input);
+
+    // Output should be 2x2x1 (one pooled value per 2x2 block)
+    // Expected max values:
+    // block (0,0): max(1,3,4,6) = 6
+    // block (0,1): max(2,1,5,2) = 5
+    // block (1,0): max(1,2,1,0) = 2
+    // block (1,1): max(8,9,6,7) = 9
+
+    assert(FLOAT_EQ(layer.cache.output->data[0], 6.0f));
+    assert(FLOAT_EQ(layer.cache.output->data[1], 5.0f));
+    assert(FLOAT_EQ(layer.cache.output->data[2], 2.0f));
+    assert(FLOAT_EQ(layer.cache.output->data[3], 9.0f));
+
+    // Print debug info
+    printf("Input:\n");
+    print_Matrix(input);
+
+    printf("Max Pool Output:\n");
+    print_Matrix(layer.cache.output);
+
+    // Free memory
+    free_Matrix(input);
+    free_Matrix(layer.cache.output);
+    free_Matrix(layer.cache.pool_indicies);
+
+    printf("PASSED\n");
+  }
+
+  printf("All Forward tests passed!\n\n");
 }
 
-int main() { test_conv2d_forward(); }
+int main() { test_forward(); }

@@ -1,4 +1,5 @@
 #include "cnn.h"
+#include <float.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,8 +148,52 @@ void conv2d_Forward(CNNLayer_t *layer, Matrix_t *input) {
 }
 
 void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input) {
-  //
-  //
+  const int pool_size = 2; // Standard 2x2 pooling
+  const int stride = 2;    // Typically same as pool size
+
+  // Calculate output dimensions
+  const int out_h = input->rows / pool_size;
+  const int out_w = input->columns / pool_size;
+
+  // Allocate output and indices matrices
+  layer->cache.output = create_Matrix(out_h, out_w, input->channels);
+  layer->cache.pool_indicies = create_Matrix(
+      out_h, out_w, input->channels * 2); // Stores (h,w) positions
+
+  for (int c = 0; c < input->channels; c++) {
+    for (int h = 0; h < out_h; h++) {
+      for (int w = 0; w < out_w; w++) {
+        float max_val = -FLT_MAX;
+        int max_h = 0, max_w = 0;
+
+        // Find maximum in pooling window
+        for (int ph = 0; ph < pool_size; ph++) {
+          for (int pw = 0; pw < pool_size; pw++) {
+            const int h_in = h * stride + ph;
+            const int w_in = w * stride + pw;
+
+            if (h_in < input->rows && w_in < input->columns) {
+              const int idx =
+                  (h_in * input->columns + w_in) * input->channels + c;
+              if (input->data[idx] > max_val) {
+                max_val = input->data[idx];
+                max_h = h_in;
+                max_w = w_in;
+              }
+            }
+          }
+        }
+
+        // Store results
+        const int out_idx = (h * out_w + w) * input->channels + c;
+        layer->cache.output->data[out_idx] = max_val;
+
+        // Store indices for backprop
+        layer->cache.pool_indicies->data[out_idx * 2] = max_h;
+        layer->cache.pool_indicies->data[out_idx * 2 + 1] = max_w;
+      }
+    }
+  }
 }
 
 void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {

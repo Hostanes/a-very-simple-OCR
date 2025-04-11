@@ -143,5 +143,6 @@ void img2col(Matrix_t *input, int output_Height, int output_Width, int channels,
              int kernel_Size, Matrix_t *output); // image to column
 void col2img(Matrix_t *cols, int output_Height, int output_Width, int channels,
              int kernel_Size, Matrix_t *output); // column to image
+void print_Matrix(Matrix_t *matrix);
 
 #endif
