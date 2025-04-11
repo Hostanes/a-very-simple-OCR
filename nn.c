@@ -1,14 +1,15 @@
 #include "lib/matrix-math.h"
+// #include "lib-omp/matrix-math.h"
 #include <math.h>
-#include <stdio.h>
 #include <omp.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
 // Network architecture
 #define NUM_LAYERS 8
 const int layer_sizes[NUM_LAYERS + 1] = {8192, 4096, 2048, 1024, 512,
-                                         256,  128,  64,   28};
+                                         256,  128,  64,   16};
 
 // Training parameters
 #define LEARNING_RATE 0.01
@@ -65,6 +66,7 @@ void softmax(Matrix *mat) {
     mat->data[i][0] = exp(mat->data[i][0] - max_val);
     sum += mat->data[i][0];
   }
+
   for (int i = 0; i < mat->rows; i++) {
     mat->data[i][0] /= sum;
   }
@@ -171,8 +173,6 @@ int main() {
   for (int i = 0; i <= NUM_LAYERS; i++) {
     activations[i] = init_Matrix(layer_sizes[i], 1);
   }
-
-
 
   double start_time = omp_get_wtime();
 
