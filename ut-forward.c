@@ -200,6 +200,92 @@ void test_forward() {
     printf("PASSED\n");
   }
 
+  {
+    printf("------------\n");
+    printf("Test 6: Flatten forward\n");
+
+    Matrix_t *input = create_Matrix(2, 2, 2);
+    input->data[0] = 1.0f; // Channel 0
+    input->data[1] = 2.0f;
+    input->data[2] = 3.0f;
+    input->data[3] = 4.0f;
+    input->data[4] = 10.0f; // Channel 1
+    input->data[5] = 20.0f;
+    input->data[6] = 30.0f;
+    input->data[7] = 40.0f;
+
+    CNNLayer_t flatten_layer = {.config = {.type = FLATTER_LAYER}};
+    flatten_Forward(&flatten_layer, input);
+
+    print_Matrix(input);
+    print_Matrix(flatten_layer.cache.output);
+
+    assert(flatten_layer.cache.output->rows == 1);
+    assert(flatten_layer.cache.output->columns == 8);
+    assert(flatten_layer.cache.output->channels == 1);
+
+    free_Matrix(input);
+    free_Matrix(flatten_layer.cache.output);
+    printf("PASSED\n");
+  }
+
+  // Test: Dense forward with ReLU and Softmax
+  {
+    printf("------------------------\n");
+    printf("Test: Dense forward with ReLU and Softmax...\n");
+
+    // Input vector: shape (1, 3, 1)
+    Matrix_t *input = create_Matrix(1, 3, 1);
+    input->data[0] = 1.0f;
+    input->data[1] = -2.0f;
+    input->data[2] = 3.0f;
+
+    // Weights: shape (2, 3, 1)  -> 2 output neurons, 3 inputs
+    Matrix_t *weights = create_Matrix(2, 3, 1);
+    weights->data[0] = 1.0f; // neuron 0: [1.0, 0.0, -1.0]
+    weights->data[1] = 0.0f;
+    weights->data[2] = -1.0f;
+
+    weights->data[3] = -1.0f; // neuron 1: [-1.0, 1.0, 1.0]
+    weights->data[4] = 1.0f;
+    weights->data[5] = 1.0f;
+
+    // Biases: shape (1, 2, 1)
+    Matrix_t *biases = create_Matrix(1, 2, 1);
+    biases->data[0] = 0.0f;
+    biases->data[1] = 0.0f;
+
+    CNNLayer_t relu_layer = {
+        .config = {.type = DENSE_LAYER, .activation = RELU},
+        .params = {.weights = weights, .biases = biases}};
+
+    dense_Forward(&relu_layer, input);
+    printf("ReLU output: %.2f, %.2f\n", relu_layer.cache.activated->data[0],
+           relu_layer.cache.activated->data[1]);
+
+    assert(FLOAT_EQ(relu_layer.cache.activated->data[0],
+                    0.0f)); // = -2 → relu = 0
+    assert(FLOAT_EQ(relu_layer.cache.activated->data[1],
+                    0.0f)); // = 0 → relu = 0
+
+    relu_layer.config.activation = SOFTMAX;
+    dense_Forward(&relu_layer, input);
+
+    float a = relu_layer.cache.activated->data[0];
+    float b = relu_layer.cache.activated->data[1];
+    printf("Softmax output: %.2f, %.2f\n", a, b);
+    assert(FLOAT_EQ(a + b, 1.0f));
+
+    // Cleanup
+    free_Matrix(input);
+    free_Matrix(weights);
+    free_Matrix(biases);
+    free_Matrix(relu_layer.cache.output);
+    free_Matrix(relu_layer.cache.activated);
+
+    printf("PASSED\n");
+  }
+
   printf("All Forward tests passed!\n\n");
 }
 

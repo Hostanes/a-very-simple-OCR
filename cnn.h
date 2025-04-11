@@ -124,7 +124,7 @@ Matrix_t *predict(CNNModel_t *model, Matrix_t *input);
 // Activation functions
 void relu_forward(Matrix_t *mat);
 void relu_backward(Matrix_t *mat, Matrix_t *grad);
-void softmax_forward(Matrix_t *mat);
+void softmax_forward(Matrix_t *input, Matrix_t *output);
 
 // Layer Operations
 void conv2d_Forward(CNNLayer_t *layer, Matrix_t *input);
@@ -133,6 +133,7 @@ void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input);
 void maxpool_Backward(CNNLayer_t *layer, Matrix_t *grad_output);
 void dense_Forward(CNNLayer_t *layer, Matrix_t *input);
 void dense_Backward(CNNLayer_t *layer, Matrix_t *grad_output);
+void flatten_Forward(CNNLayer_t *layer, Matrix_t *input);
 
 // Utils
 Matrix_t *create_Matrix(int rows, int cols, int channels);

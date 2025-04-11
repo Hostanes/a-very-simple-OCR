@@ -197,8 +197,30 @@ void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input) {
 }
 
 void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {
-  //
-  //
+  int input_size = input->columns; // assuming input shape is (1, input_size, 1)
+  int output_size =
+      layer->params.weights->rows; // shape: (output_size, input_size)
+
+  layer->cache.output = create_Matrix(1, output_size, 1);
+
+  for (int o = 0; o < output_size; o++) {
+    float sum = 0.0f;
+    for (int i = 0; i < input_size; i++) {
+      int weight_idx = o * input_size + i;
+      sum += layer->params.weights->data[weight_idx] * input->data[i];
+    }
+    sum += layer->params.biases->data[o];
+    layer->cache.output->data[o] = sum;
+  }
+
+  // Activation
+  layer->cache.activated = matrix_Copy(layer->cache.output);
+
+  if (layer->config.activation == RELU) {
+    relu_forward(layer->cache.activated);
+  } else if (layer->config.activation == SOFTMAX) {
+    softmax_forward(layer->cache.output, layer->cache.activated);
+  }
 }
 
 void relu_forward(Matrix_t *mat) {
@@ -216,9 +238,44 @@ void relu_forward(Matrix_t *mat) {
     mat->data[i] = mat->data[i] > 0 ? mat->data[i] : 0;
   }
 }
-void softmax_forward(Matrix_t *mat) {
-  //
-  //
+
+void softmax_forward(Matrix_t *input, Matrix_t *output) {
+
+  float max_val = -FLT_MAX;
+  float sum_exp = 0.0f;
+  const int size = input->rows * input->columns;
+
+  // Find max value for numerical stability
+  for (int i = 0; i < size; i++) {
+    if (input->data[i] > max_val) {
+      max_val = input->data[i];
+    }
+  }
+
+  // Compute exponentials and their sum
+  for (int i = 0; i < size; i++) {
+    output->data[i] = expf(input->data[i] - max_val);
+    sum_exp += output->data[i];
+  }
+
+  // Normalize to get probabilities
+  for (int i = 0; i < size; i++) {
+    output->data[i] /= sum_exp;
+  }
+}
+
+void flatten_Forward(CNNLayer_t *layer, Matrix_t *input) {
+  int flat_size = input->rows * input->columns * input->channels;
+
+  // Allocate flat output: 1 row, flat_size columns, 1 channel
+  layer->cache.output = create_Matrix(1, flat_size, 1);
+
+  for (int i = 0; i < flat_size; i++) {
+    layer->cache.output->data[i] = input->data[i];
+  }
+
+  // For simplicity, activated == output here
+  layer->cache.activated = layer->cache.output;
 }
 
 // Backward pass through the network
