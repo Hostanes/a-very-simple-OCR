@@ -1,6 +1,10 @@
 /*
   unit tests for the function:
   conv2d_Forward
+
+  what is checked is the cached value not the activated value
+  activated value being the one outputted by the activation function
+  in our case its ReLU
 */
 
 #include "cnn.h"
@@ -72,8 +76,8 @@ void test_conv2d_forward() {
     zero_Init(layer.params.biases);
 
     conv2d_Forward(&layer, input);
-    float expected[9] = {3, 0, -3, 4, 0, -4, 3, 0, -3};
 
+    float expected[9] = {3, 0, -3, 4, 0, -4, 3, 0, -3};
     // Verify
     for (int i = 0; i < 9; i++) {
       if (!FLOAT_EQ(layer.cache.output->data[i], expected[i])) {
@@ -125,32 +129,7 @@ void test_conv2d_forward() {
 
     zero_Init(layer.params.biases);
 
-    // Debug: Print input
-    printf("Input:\n");
-    for (int i = 0; i < 4; i++) {
-      printf("%.1f ", input->data[i]);
-      if ((i + 1) % 2 == 0)
-        printf("\n");
-    }
-
-    // Debug: Print weights per filter
-    printf("\nWeights:\n");
-    for (int f = 0; f < 2; f++) {
-      printf("Filter %d:\n", f);
-      for (int i = 0; i < 4; i++) {
-        printf("%.1f ", layer.params.weights->data[f * 4 + i]);
-        if ((i + 1) % 2 == 0)
-          printf("\n");
-      }
-    }
-
     conv2d_Forward(&layer, input);
-
-    // Debug: Print output
-    printf("\nOutput:\n");
-    for (int i = 0; i < 2; i++) {
-      printf("Filter %d: %.1f\n", i, layer.cache.output->data[i]);
-    }
 
     // Assertions
     assert(FLOAT_EQ(layer.cache.output->data[0], 2.0f));

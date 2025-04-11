@@ -157,10 +157,20 @@ void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {
 }
 
 void relu_forward(Matrix_t *mat) {
-  //
-  //
-}
+  // Check for null pointer
+  if (!mat || !mat->data) {
+    fprintf(stderr, "Error: Null matrix in relu_forward\n");
+    return;
+  }
 
+  // Get total number of elements in matrix
+  const int total_elements = mat->rows * mat->columns * mat->channels;
+
+  // Apply ReLU to each element
+  for (int i = 0; i < total_elements; i++) {
+    mat->data[i] = mat->data[i] > 0 ? mat->data[i] : 0;
+  }
+}
 void softmax_forward(Matrix_t *mat) {
   //
   //
