@@ -38,7 +38,7 @@ typedef struct {
   LayerType type;
   ActivationFunctionType activation;
 
-  int kernel_size;
+  int kernel_size; // filter size e.g.  = 3 for 3x3 filters
   int filters;
   int padding;
 

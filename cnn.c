@@ -45,6 +45,11 @@ void add_Layer(CNNModel_t *model, LayerConfig_t config) {
   model->num_layers++;
 }
 
+void update_Weights(CNNModel_t *model) {
+  //
+  //
+}
+
 /*
   Propagation
 */
@@ -76,6 +81,89 @@ void forward_Pass(CNNModel_t *model, Matrix_t *input) {
 
     current = current->next;
   }
+}
+
+void conv2d_Forward(CNNLayer_t *layer, Matrix_t *input) {
+  //
+
+  int padding = layer->config.padding;
+  int kernel_size = layer->config.kernel_size;
+
+  int output_height = (input->rows + 2 * padding - kernel_size) + 1;
+  int output_width = (input->columns + 2 * padding - kernel_size) + 1;
+
+  layer->cache.output =
+      create_Matrix(output_height, output_width, layer->config.filters);
+
+  for (int i_filter = 0; i_filter < layer->config.filters; i_filter++) {
+
+    for (int h = 0; h < output_height; h++) {
+      for (int w = 0; w < output_width; w++) {
+        float sum = layer->params.biases
+                        ->data[i_filter]; // add bias for i_filter to sum
+
+        int h_start = h - padding;
+        int w_start = w - padding;
+
+        for (int kh = 0; kh < kernel_size; kh++) {         // kernel height
+          for (int kw = 0; kw < kernel_size; kw++) {       // kernel width
+            for (int ch = 0; ch < input->channels; ch++) { // input channels
+
+              int h_in = h_start + kh;
+              int w_in = w_start + kw;
+
+              if (h_in < 0 || h_in >= input->rows || w_in < 0 ||
+                  w_in >= input->columns) {
+                continue;
+              }
+              /*
+                calculate weight index for the current filter, conceptually 4
+                dimensions but stored as 1 dimension
+              */
+              int weight_idx =
+                  ((kh * kernel_size + kw) * input->channels + ch) *
+                      layer->config.filters +
+                  i_filter;
+              /*
+                caclulate index for required input value
+              */
+              int input_idx =
+                  (h_in * input->columns + w_in) * input->channels + ch;
+
+              sum += layer->params.weights->data[weight_idx] *
+                     input->data[input_idx];
+            }
+          }
+        }
+        int out_idx = (h * output_width + w) * layer->config.filters + i_filter;
+        layer->cache.output->data[out_idx] = sum;
+      }
+    }
+  }
+
+  // Apply activation (ReLU)
+  layer->cache.activated = matrix_Copy(layer->cache.output);
+  relu_forward(layer->cache.activated);
+}
+
+void maxpool_Forward(CNNLayer_t *layer, Matrix_t *input) {
+  //
+  //
+}
+
+void dense_Forward(CNNLayer_t *layer, Matrix_t *input) {
+  //
+  //
+}
+
+void relu_forward(Matrix_t *mat) {
+  //
+  //
+}
+
+void softmax_forward(Matrix_t *mat) {
+  //
+  //
 }
 
 // Backward pass through the network
@@ -116,6 +204,21 @@ void backward_Pass(CNNModel_t *model, Matrix_t *target, float *loss) {
 
     current = current->next; // Move backward through the network
   }
+}
+
+void conv2d_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
+  //
+  //
+}
+
+void maxpool_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
+  //
+  //
+}
+
+void dense_Backward(CNNLayer_t *layer, Matrix_t *grad_output) {
+  //
+  //
 }
 
 /*
