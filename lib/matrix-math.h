@@ -1,3 +1,8 @@
+/*
+  Basic matrix multiplication library
+  matricies are limited to 2 dimensions
+*/
+
 
 #ifndef MATRIX_H
 #define MATRIX_H

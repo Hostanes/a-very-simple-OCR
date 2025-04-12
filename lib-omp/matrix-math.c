@@ -1,3 +1,10 @@
+
+/*
+  matrix-math.c
+
+  implements fuctions from matrix-math.h, but parallelized using omp
+ */
+
 #include "matrix-math.h"
 
 /*
@@ -44,6 +51,10 @@ Matrix *multiply_Mat(Matrix *mat1, Matrix *mat2) {
   return result;
 }
 
+/* ======================= */
+/* Optimized Matrix Math */
+/* ======================= */
+
 /*
    Performs matrix multiplication (dot product) of two matrices
    mat1: m x n matrix (left operand)
@@ -59,38 +70,41 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
   }
 
   Matrix *result = init_Matrix(mat1->rows, mat2->columns);
+  const int BLOCK_SIZE =
+      64; // too large and blocks larger than matricies, too small and no point
 
-#pragma omp parallel for
-  for (int i = 0; i < mat1->rows; i++) {
-    for (int k = 0; k < mat1->columns; k++) {
-      double a = mat1->data[i][k];
+  // Only parallelize for large enough matrices
+  if (mat1->rows * mat2->columns > 10000) {
+#pragma omp parallel for collapse(2) schedule(static)
+    for (int i = 0; i < mat1->rows; i += BLOCK_SIZE) {
+      for (int j = 0; j < mat2->columns; j += BLOCK_SIZE) {
+        for (int k = 0; k < mat1->columns; k += BLOCK_SIZE) {
+          // Process block
+          for (int ii = i; ii < i + BLOCK_SIZE && ii < mat1->rows; ii++) {
+            for (int jj = j; jj < j + BLOCK_SIZE && jj < mat2->columns; jj++) {
+              double sum = result->data[ii][jj];
+              for (int kk = k; kk < k + BLOCK_SIZE && kk < mat1->columns;
+                   kk++) {
+                sum += mat1->data[ii][kk] * mat2->data[kk][jj];
+              }
+              result->data[ii][jj] = sum;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    // Sequential version for small matrices
+    for (int i = 0; i < mat1->rows; i++) {
       for (int j = 0; j < mat2->columns; j++) {
-        result->data[i][j] += a * mat2->data[k][j];
+        double sum = 0;
+        for (int k = 0; k < mat1->columns; k++) {
+          sum += mat1->data[i][k] * mat2->data[k][j];
+        }
+        result->data[i][j] = sum;
       }
     }
   }
-
-  //   const int BLOCK_SIZE = 256;
-  // #pragma omp parallel for
-  //   for (int i = 0; i < mat1->rows; i += BLOCK_SIZE) {
-  //     for (int j = 0; j < mat2->columns; j += BLOCK_SIZE) {
-  //       for (int k = 0; k < mat1->columns; k += BLOCK_SIZE) {
-  //         // Process block
-  //         for (int ii = i; ii < i + BLOCK_SIZE && ii < mat1->rows; ii++) {
-  //           for (int jj = j; jj < j + BLOCK_SIZE && jj < mat2->columns; jj++)
-  //           {
-  //             double sum = 0;
-  //             for (int kk = k; kk < k + BLOCK_SIZE && kk < mat1->columns;
-  //             kk++) {
-  //               sum += mat1->data[ii][kk] * mat2->data[kk][jj];
-  //             }
-  //             result->data[ii][jj] += sum;
-  //           }
-  //         }
-  //       }
-  //     }
-  //   }
-
   return result;
 }
 

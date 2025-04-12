@@ -1,5 +1,7 @@
 /*
-  TODO clean up this code
+  nnlib.c
+
+  Implementation file of nnlib.h
 */
 
 #include "nnlib.h"
@@ -61,6 +63,9 @@ void free_model(Model_t *model) {
   free(model);
 }
 
+/* ======================= */
+/* Optimized Forward Pass */
+/* ======================= */
 /*
   Forward pass through the entire network for 1 input
 
@@ -69,28 +74,33 @@ void free_model(Model_t *model) {
   activation = Act(output), e.g. ReLU or Softmax
 
 */
-void forward_pass(Model_t *model, struct Matrix *input,
-                  struct Matrix **activations) {
-
-  // first activation is the input
+void forward_pass(Model_t *model, Matrix *input, Matrix **activations) {
+// First activation is the input
+#pragma omp parallel for if (input->rows > 1000)
   for (int i = 0; i < input->rows; i++) {
     activations[0]->data[i][0] = input->data[i][0];
   }
 
-  // forward through each layer
-  for (int i = 0; i < model->num_layers; i++) {
-    Matrix *temp = dot_Mat(model->layers[i]->weights, activations[i]);
+  // Forward through each layer
+  for (int l = 0; l < model->num_layers; l++) {
+    Layer_t *layer = model->layers[l];
 
-    for (int j = 0; j < activations[i + 1]->rows; j++) {
-      activations[i + 1]->data[j][0] =
-          temp->data[j][0] + model->layers[i]->biases->data[j][0];
+    // Use dot product for matrix multiplication
+    Matrix *temp = dot_Mat(layer->weights, activations[l]);
+
+// Add bias (parallelized)
+#pragma omp parallel for if (layer->biases->rows > 256)
+    for (int i = 0; i < layer->biases->rows; i++) {
+      activations[l + 1]->data[i][0] =
+          temp->data[i][0] + layer->biases->data[i][0];
     }
 
-    model->layers[i]->activation(activations[i + 1]);
-    matrix_Free(temp);
+    // Apply activation
+    layer->activation(activations[l + 1]);
+
+    matrix_Free(temp); // Free temporary matrix
   }
 }
-
 /*
 Backward pass (backpropagation) through the entire network for 1 input
 
@@ -124,6 +134,25 @@ void backward_pass(Model_t *model, struct Matrix **activations,
     }
 
     Matrix *weight_gradient = dot_Mat(delta, activation_transpose);
+
+    // Clip gradients to [-1.0, 1.0] range
+    double max_grad = 1.0;
+    for (int i = 0; i < weight_gradient->rows; i++) {
+      for (int j = 0; j < weight_gradient->columns; j++) {
+        weight_gradient->data[i][j] =
+            fmax(fmin(weight_gradient->data[i][j], max_grad), -max_grad);
+      }
+    }
+
+    // After computing weight_gradient
+    double grad_norm = 0.0;
+    for (int i = 0; i < weight_gradient->rows; i++) {
+      for (int j = 0; j < weight_gradient->columns; j++) {
+        grad_norm += fabs(weight_gradient->data[i][j]);
+      }
+    }
+
+    // printf("Layer %d gradient norm: %.6f\n", l, grad_norm);
 
     // Update weights
     for (int i = 0; i < model->layers[l]->weights->rows; i++) {
@@ -174,6 +203,9 @@ void backward_pass(Model_t *model, struct Matrix **activations,
   matrix_Free(delta);
 }
 
+/* ======================== */
+/* Optimized Training Loop */
+/* ======================== */
 /*
   Trains model on a full dataset for multiple epochs
   param model Neural network model
@@ -183,78 +215,81 @@ void backward_pass(Model_t *model, struct Matrix **activations,
   param epochs Number of full passes through the batch
   param learning_rate Learning rate for weight updates
 */
-
 void train_model_batch(Model_t *model, Matrix **inputs, Matrix **targets,
                        int batch_size, int epochs, double learning_rate) {
   double total_start = omp_get_wtime();
 
-  // Initialize activations
-  Matrix *activations[model->num_layers + 1];
-  for (int i = 0; i <= model->num_layers; i++) {
-    int size = (i == 0) ? model->layers[0]->input_size
-                        : model->layers[i - 1]->output_size;
-    activations[i] = init_Matrix(size, 1);
+  // Initialize thread-private activation buffers
+  Matrix *thread_activations[omp_get_max_threads()][model->num_layers + 1];
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    for (int i = 0; i <= model->num_layers; i++) {
+      int size = (i == 0) ? model->layers[0]->input_size
+                          : model->layers[i - 1]->output_size;
+      thread_activations[tid][i] = init_Matrix(size, 1);
+    }
   }
 
   for (int epoch = 0; epoch < epochs; epoch++) {
     double epoch_start = omp_get_wtime();
-    printf("\nEpoch %d/%d\n", epoch + 1, epochs);
-
     double epoch_loss = 0.0;
     int correct = 0;
 
+    // it actually is possible to parallelize different input samples!!!
+#pragma omp parallel for reduction(+ : epoch_loss, correct)                    \
+    schedule(dynamic, 100)
     for (int sample = 0; sample < batch_size; sample++) {
-      // Progress tracking
-      if (sample % 1000 == 0) {
-        printf("  Processed %5d/%d (%.1f%%)\r", sample, batch_size,
-               (double)sample / batch_size * 100);
-        fflush(stdout);
-      }
+      int tid = omp_get_thread_num();
 
-      // Forward pass
-      copy_Mat(activations[0], inputs[sample]);
-      forward_pass(model, activations[0], activations);
+      // ===============
+      // forward with private activations
+      copy_Mat(thread_activations[tid][0], inputs[sample]);
+      forward_pass(model, thread_activations[tid][0], thread_activations[tid]);
 
-      // Calculate accuracy
+      // ===============
+      // accuracy
       int pred = 0;
-      double max_val = activations[model->num_layers]->data[0][0];
+      double max_val = thread_activations[tid][model->num_layers]->data[0][0];
       for (int i = 1; i < model->layers[model->num_layers - 1]->output_size;
            i++) {
-        if (activations[model->num_layers]->data[i][0] > max_val) {
-          max_val = activations[model->num_layers]->data[i][0];
+        if (thread_activations[tid][model->num_layers]->data[i][0] > max_val) {
+          max_val = thread_activations[tid][model->num_layers]->data[i][0];
           pred = i;
         }
       }
       if (targets[sample]->data[pred][0] == 1.0)
         correct++;
 
-      // Backward pass
-      backward_pass(model, activations, targets[sample]);
+      backward_pass(model, thread_activations[tid], targets[sample]);
 
-      // Loss calculation
+      // ===============
+      // loss
       for (int i = 0; i < targets[sample]->rows; i++) {
         if (targets[sample]->data[i][0] == 1.0) {
-          epoch_loss += -log(activations[model->num_layers]->data[i][0]);
+          epoch_loss +=
+              -log(thread_activations[tid][model->num_layers]->data[i][0]);
           break;
         }
       }
     }
 
+    // Print epoch stats
     double epoch_time = omp_get_wtime() - epoch_start;
-    double accuracy = (double)correct / batch_size * 100;
-
-    printf("  Completed %d images | ", batch_size);
-    printf("Time: %.2fs | ", epoch_time);
-    printf("Loss: %.4f | ", epoch_loss / batch_size);
-    printf("Accuracy: %.2f%%\n", accuracy);
+    printf("Epoch %d/%d | Time: %.2fs | Loss: %.4f | Acc: %.2f%%\n", epoch + 1,
+           epochs, epoch_time, epoch_loss / batch_size,
+           (double)correct / batch_size * 100);
   }
 
-  for (int i = 0; i <= model->num_layers; i++) {
-    matrix_Free(activations[i]);
+// Cleanup
+#pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
+    for (int i = 0; i <= model->num_layers; i++) {
+      matrix_Free(thread_activations[tid][i]);
+    }
   }
-
-  printf("\nTotal training time: %.2f seconds\n",
-         omp_get_wtime() - total_start);
+  printf("Total training time: %.2f seconds\n", omp_get_wtime() - total_start);
 }
 
 // =======================

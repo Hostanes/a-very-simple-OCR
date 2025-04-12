@@ -1,3 +1,11 @@
+/*
+  ut-dataloader.c
+
+  unit test of the mnist data loader, prints out a random image in the terminal
+  along with its label
+*/
+
+
 #define USE_MNIST_LOADER
 #define MNIST_BINARY
 #include "mnist-dataloader/mnist-dataloader.h"

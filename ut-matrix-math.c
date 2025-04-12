@@ -1,3 +1,13 @@
+/*
+  ut-matrix-math.c
+
+  unit test of the matrix math library, tests out:
+  - initializing matrix
+  - adding matricies
+  - multiplying matricies (dot product)
+*/
+
+
 #include "lib/matrix-math.h"
 
 int main() {

@@ -1,3 +1,16 @@
+/*
+  dot-prod-test.c
+  
+  compares 2 methods to parallelize matrix dot product/ matrix multiplication
+  1. naive_matmul():  Naive parallel, simply parallelizing the outer for loop 
+  2. blocked_matmul(): divides matricies into blocks for better cache effiency
+
+  can use perf utility to compare cache misses using this command:
+    $ perf stat -e cache-misses,L1-dcache-load-misses ./test.o
+  where test.o is the compiled binary of this script
+*/
+
+
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>

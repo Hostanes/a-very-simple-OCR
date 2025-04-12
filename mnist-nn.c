@@ -1,6 +1,8 @@
 /*
-  run the neural network on the MNIST library, too small to notice differences
-  with parallelization
+  mnist-nn.c
+
+  run the neural network on the MNIST library
+  too small to notice difference with parallelization
 */
 
 #define USE_MNIST_LOADER
@@ -18,6 +20,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+
+#define USE_OPENMP
 
 // Network architecture
 #define NUM_LAYERS 4
@@ -42,6 +46,21 @@ int main(int argc, char **argv) {
   // Create model
   Model_t *model = create_model(NUM_LAYERS, layer_sizes, LEARNING_RATE);
 
+  printf("Initial Weight/Bias Checks:\n");
+  for (int l = 0; l < model->num_layers; l++) {
+    double w_mean = 0, b_mean = 0;
+    for (int i = 0; i < model->layers[l]->weights->rows; i++) {
+      for (int j = 0; j < model->layers[l]->weights->columns; j++) {
+        w_mean += model->layers[l]->weights->data[i][j];
+      }
+      b_mean += model->layers[l]->biases->data[i][0];
+    }
+    printf("Layer %d: W_mean=%.4f, B_mean=%.4f\n", l,
+           w_mean / (model->layers[l]->weights->rows *
+                     model->layers[l]->weights->columns),
+           b_mean / model->layers[l]->biases->rows);
+  }
+
   /*
     Prepare batch containers
     Train function expects inputs and targets in seperate arrays
@@ -62,7 +81,7 @@ int main(int argc, char **argv) {
     targets[i]->data[train_data[i].label][0] = 1.0;
   }
 
-  train_model_batch(model, inputs, targets, train_count/5, EPOCHS, LEARNING_RATE);
+  train_model_batch(model, inputs, targets, train_count, EPOCHS, LEARNING_RATE);
 
   for (int i = 0; i < train_count; i++) {
     matrix_Free(inputs[i]);

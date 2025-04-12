@@ -1,3 +1,11 @@
+/*
+  nnlib.h:
+
+  Library to implement multi layer Dense (full connected) neural network
+  uses function hooks to allow custom activation functions
+*/
+
+
 #ifndef NEURAL_NETWORK_H
 #define NEURAL_NETWORK_H
 
