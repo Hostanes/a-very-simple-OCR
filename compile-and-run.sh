@@ -9,7 +9,7 @@ fi
 input_file="$1"
 base_name="${input_file%.*}"
 
-output_file="${base_name}.o"
+output_file="bin/${base_name}.o"
 
 echo "Compiling $input_file to $output_file..."
 gcc "$input_file" nnlib.c lib-omp/matrix-math.c -lm -o "$output_file" -fopenmp
