@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define USE_OPENMP // TODO add a way to define or undefine pragmas out
+#include "lib-omp/config.h"
 
 // Larger network architecture for benchmarking
 #define NUM_LAYERS 5
@@ -28,7 +28,7 @@ const int layer_sizes[NUM_LAYERS + 1] = {1024, 512, 256,
 
 int main() {
 
-  omp_set_num_threads(1);
+  omp_set_num_threads(16);
 
   srand(time(NULL));
   printf("=== Neural Network Speed Benchmark ===\n");

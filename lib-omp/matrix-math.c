@@ -75,7 +75,9 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
 
   // Only parallelize for large enough matrices
   if (mat1->rows * mat2->columns > 10000) {
+#ifdef USE_OMP
 #pragma omp parallel for collapse(2) schedule(static)
+#endif
     for (int i = 0; i < mat1->rows; i += BLOCK_SIZE) {
       for (int j = 0; j < mat2->columns; j += BLOCK_SIZE) {
         for (int k = 0; k < mat1->columns; k += BLOCK_SIZE) {

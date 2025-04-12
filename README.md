@@ -5,7 +5,47 @@
  Will include both serial and parallel versions of the code
 ```
 
+\[TODO] update readme
+
 # a-very-simple-OCR
+
+
+### How to use:
+
+All scripts include the file `config.h`
+```
+config.h:
+
+#ifndef CONFIG_H
+#define CONFIG_H
+
+// Uncomment to enable OpenMP
+#define USE_OMP
+
+#endif
+```
+
+all pragmas are wrapped with:
+```
+#ifdef USE_OMP
+#pragma omp parallel...
+#endif
+```
+
+If `USE_OMP` is not defined, the C pre-processor will ignore the pragmas, effectively using single threading.
+
+The neural network library:
+
+- `cnnlib.c` includes the implementation of the training loop functions
+- `cnnlib.h` describes the function declarations and architecture structs
+
+
+Main scripts:
+- `dot-prod-test.c` tests the difference between naive parallel dot product and tiled dot product
+- `random-nn-test.c` tests the neural network on a randomized dataset, accuracy and loss are ignore, used to test the speed gain of parallelism
+- `left-right-nn.c` runs the neural network on a generated simple dataset of 2 classes, 1 class has pixels on the left, 1 class has pixels on the right, used to sanity test weight update logic
+- `mnist-nn.c` runs the neural network on the **mnist handwritten character** dataset
+
 
 ### Neural Network Architecture
 

@@ -5,7 +5,7 @@
 */
 
 #include "nnlib.h"
-
+#include "lib-omp/config.h"
 #include "lib/matrix-math.h"
 
 /*
@@ -76,7 +76,9 @@ void free_model(Model_t *model) {
 */
 void forward_pass(Model_t *model, Matrix *input, Matrix **activations) {
 // First activation is the input
+#ifdef USE_OMP
 #pragma omp parallel for if (input->rows > 1000)
+#endif
   for (int i = 0; i < input->rows; i++) {
     activations[0]->data[i][0] = input->data[i][0];
   }
@@ -89,7 +91,9 @@ void forward_pass(Model_t *model, Matrix *input, Matrix **activations) {
     Matrix *temp = dot_Mat(layer->weights, activations[l]);
 
 // Add bias (parallelized)
+#ifdef USE_OMP
 #pragma omp parallel for if (layer->biases->rows > 256)
+#endif
     for (int i = 0; i < layer->biases->rows; i++) {
       activations[l + 1]->data[i][0] =
           temp->data[i][0] + layer->biases->data[i][0];
@@ -221,7 +225,9 @@ void train_model_batch(Model_t *model, Matrix **inputs, Matrix **targets,
 
   // Initialize thread-private activation buffers
   Matrix *thread_activations[omp_get_max_threads()][model->num_layers + 1];
+#ifdef USE_OMP
 #pragma omp parallel
+#endif
   {
     int tid = omp_get_thread_num();
     for (int i = 0; i <= model->num_layers; i++) {
@@ -237,8 +243,11 @@ void train_model_batch(Model_t *model, Matrix **inputs, Matrix **targets,
     int correct = 0;
 
     // it actually is possible to parallelize different input samples!!!
+#ifdef USE_OMP
 #pragma omp parallel for reduction(+ : epoch_loss, correct)                    \
     schedule(dynamic, 100)
+#endif
+
     for (int sample = 0; sample < batch_size; sample++) {
       int tid = omp_get_thread_num();
 
@@ -282,7 +291,9 @@ void train_model_batch(Model_t *model, Matrix **inputs, Matrix **targets,
   }
 
 // Cleanup
+#ifdef USE_OMP
 #pragma omp parallel
+#endif
   {
     int tid = omp_get_thread_num();
     for (int i = 0; i <= model->num_layers; i++) {

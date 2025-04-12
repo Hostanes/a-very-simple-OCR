@@ -10,7 +10,6 @@
   where test.o is the compiled binary of this script
 */
 
-
 #include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,20 +68,20 @@ int main() {
   int num_threads = omp_get_max_threads();
   printf("Running with %d threads\n", num_threads);
 
-  start = omp_get_wtime();
-  naive_matmul();
-  end = omp_get_wtime();
-  printf("Naive parallel: %f sec\n", end - start);
+  // start = omp_get_wtime();
+  // naive_matmul();
+  // end = omp_get_wtime();
+  // printf("Naive parallel: %f sec\n", end - start);
 
-#pragma omp parallel for collapse(2)
-  for (int i = 0; i < N; i++) {
-    for (int j = 0; j < N; j++) {
-      C[i][j] = 0.0;
-    }
-  }
+// #pragma omp parallel for collapse(2)
+//   for (int i = 0; i < N; i++) {
+//     for (int j = 0; j < N; j++) {
+//       C[i][j] = 0.0;
+//     }
+//   }
 
   start = omp_get_wtime();
-  blocked_matmul(64);
+  blocked_matmul(128);
   end = omp_get_wtime();
   printf("Blocked parallel: %f sec\n", end - start);
 

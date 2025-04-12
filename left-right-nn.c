@@ -2,9 +2,11 @@
   left-right-nn.c
 
   tests the accuracy of the DNN using a very simple 2 class classification
-  some of the matricies have piexls on the left side, others have pixels on the right side
+  some of the matricies have piexls on the left side, others have pixels on the
+  right side
 
-  results in immediate 100% accuracy by second epoch, used as an occam's razor to confirm weight update works
+  results in immediate 100% accuracy by second epoch, used as an occam's razor
+  to confirm weight update works
 */
 #include "lib/matrix-math.h"
 #include "nnlib.h"
@@ -13,7 +15,7 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define USE_OPENMP
+#include "lib-omp/config.h"
 
 // Larger network architecture
 #define NUM_LAYERS 5
@@ -23,7 +25,7 @@ const int layer_sizes[NUM_LAYERS + 1] = {
 // Enhanced benchmark parameters
 #define LEARNING_RATE 0.001
 #define EPOCHS 10
-#define BATCH_SIZE 5000    // Larger sample size
+#define BATCH_SIZE 5000     // Larger sample size
 #define IMG_SIZE 32         // 32x32 images
 #define PATTERN_THICKNESS 8 // Width of the pattern border
 

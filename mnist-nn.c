@@ -21,7 +21,8 @@
 #include <stdlib.h>
 #include <time.h>
 
-#define USE_OPENMP
+#include "lib-omp/matrix-math.h"
+
 
 // Network architecture
 #define NUM_LAYERS 4
@@ -32,6 +33,9 @@ const int layer_sizes[NUM_LAYERS + 1] = {784, 256, 128, 64, 10};
 #define EPOCHS 10
 
 int main(int argc, char **argv) {
+
+  omp_set_num_threads(16);
+
   // Load MNIST data (unchanged)
   mnist_data *train_data;
   unsigned int train_count;
