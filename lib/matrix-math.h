@@ -2,6 +2,7 @@
 #ifndef MATRIX_H
 #define MATRIX_H
 
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -9,7 +10,7 @@
 #define UPPER_BOUND 1
 #define LOWER_BOUND 0
 
-typedef struct {
+typedef struct Matrix {
   int rows, columns;
   double **data;
 } Matrix;
@@ -47,5 +48,7 @@ Matrix *add_Mat(Matrix *mat1, Matrix *mat2);
    Returns: Pointer to new m x p matrix (must be freed by caller)
 */
 Matrix *dot_Mat(Matrix *mat1, Matrix *mat2);
+
+int copy_Mat(Matrix *dest, const Matrix *src);
 
 #endif /* MATRIX_H */

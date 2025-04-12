@@ -60,8 +60,6 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
 
   Matrix *result = init_Matrix(mat1->rows, mat2->columns);
 
-  const int BLOCK_SIZE = 64;
-
 #pragma omp parallel for
   for (int i = 0; i < mat1->rows; i++) {
     for (int k = 0; k < mat1->columns; k++) {
@@ -72,27 +70,48 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
     }
   }
 
+  //   const int BLOCK_SIZE = 256;
+  // #pragma omp parallel for
+  //   for (int i = 0; i < mat1->rows; i += BLOCK_SIZE) {
+  //     for (int j = 0; j < mat2->columns; j += BLOCK_SIZE) {
+  //       for (int k = 0; k < mat1->columns; k += BLOCK_SIZE) {
+  //         // Process block
+  //         for (int ii = i; ii < i + BLOCK_SIZE && ii < mat1->rows; ii++) {
+  //           for (int jj = j; jj < j + BLOCK_SIZE && jj < mat2->columns; jj++)
+  //           {
+  //             double sum = 0;
+  //             for (int kk = k; kk < k + BLOCK_SIZE && kk < mat1->columns;
+  //             kk++) {
+  //               sum += mat1->data[ii][kk] * mat2->data[kk][jj];
+  //             }
+  //             result->data[ii][jj] += sum;
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+
   return result;
 }
 
-// #pragma omp parallel for
-//   for (int i = 0; i < mat1->rows; i += BLOCK_SIZE) {
-//     for (int j = 0; j < mat2->columns; j += BLOCK_SIZE) {
-//       for (int k = 0; k < mat1->columns; k += BLOCK_SIZE) {
-//         // Process block
-//         for (int ii = i; ii < i + BLOCK_SIZE && ii < mat1->rows; ii++) {
-//           for (int jj = j; jj < j + BLOCK_SIZE && jj < mat2->columns; jj++) {
-//             double sum = 0;
-//             for (int kk = k; kk < k + BLOCK_SIZE && kk < mat1->columns; kk++)
-//             {
-//               sum += mat1->data[ii][kk] * mat2->data[kk][jj];
-//             }
-//             result->data[ii][jj] += sum;
-//           }
-//         }
-//       }
-//     }
-//   }
+/*
+  Copies values from source matrix to destination matrix
+*/
+int copy_Mat(Matrix *dest, const Matrix *src) {
+  if (dest->rows != src->rows || dest->columns != src->columns) {
+    fprintf(stderr, "Matrix dimension mismatch: (%dx%d) vs (%dx%d)\n",
+            dest->rows, dest->columns, src->rows, src->columns);
+    return -1;
+  }
+
+  for (int i = 0; i < src->rows; i++) {
+    for (int j = 0; j < src->columns; j++) {
+      dest->data[i][j] = src->data[i][j];
+    }
+  }
+
+  return 0;
+}
 
 /*
   randomize matrix of size rows x columns

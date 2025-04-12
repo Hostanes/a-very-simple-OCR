@@ -10,7 +10,7 @@
 #define UPPER_BOUND 1
 #define LOWER_BOUND 0
 
-typedef struct {
+typedef struct Matrix {
   int rows, columns;
   double **data;
 } Matrix;

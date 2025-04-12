@@ -74,13 +74,32 @@ Matrix *dot_Mat(Matrix *mat1, Matrix *mat2) {
 }
 
 /*
+  Copies values from source matrix to destination matrix
+*/
+int copy_Mat(Matrix *dest, const Matrix *src) {
+  if (dest->rows != src->rows || dest->columns != src->columns) {
+    fprintf(stderr, "Matrix dimension mismatch: (%dx%d) vs (%dx%d)\n",
+            dest->rows, dest->columns, src->rows, src->columns);
+    return -1;
+  }
+
+  for (int i = 0; i < src->rows; i++) {
+    for (int j = 0; j < src->columns; j++) {
+      dest->data[i][j] = src->data[i][j];
+    }
+  }
+
+  return 0;
+}
+
+/*
   randomize matrix of size rows x columns
   values are randomized between values LOWER_BOUND and UPPER_BOUND
 */
 void randomize_Matrix(Matrix *matrix) {
   for (int i = 0; i < matrix->rows; i++) {
     for (int j = 0; j < matrix->columns; j++) {
-      matrix->data[i][j] = (double )rand() / RAND_MAX * 1;
+      matrix->data[i][j] = (double)rand() / RAND_MAX * 1;
     }
   }
 }
