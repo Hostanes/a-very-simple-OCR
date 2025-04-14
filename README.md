@@ -6,6 +6,8 @@
 ```
 
 \[TODO] update readme
+\[TODO] add conv2d layer support to the library
+\[TODO] add max pooling layers
 
 # a-very-simple-OCR
 

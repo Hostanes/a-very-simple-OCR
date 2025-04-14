@@ -1,8 +1,7 @@
 /*
   ut-nn2.c
 
-  TODO
-  Weight updating is slightly off, back propagation needs to be tuned
+  TODO Weight updating is slightly off, back propagation needs to be tuned
 */
 
 #include "nnlib.h"
