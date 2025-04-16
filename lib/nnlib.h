@@ -3,9 +3,13 @@
 
 #include <math.h>
 #include <omp.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// neural network magic number, used at the top of the model file
+#define MAGIC_NUMBER 143 // 0x8f
 
 typedef float (*ActivationFunc)(float);
 typedef float (*ActivationDerivative)(float);
@@ -28,6 +32,7 @@ typedef struct {
   int num_layers;
   float learning_rate;
   float momentum;
+  int version; // differentiate between different model files
 } NeuralNetwork_t;
 
 // NN INIT, FREE FUNCS
@@ -46,6 +51,13 @@ void train(NeuralNetwork_t *net, float *input, float *target);
 int predict(NeuralNetwork_t *net, float *input);
 float calculate_loss(NeuralNetwork_t *net, float *output, float *target);
 
+// alternative function to train, used for parallelized gradients, each thread
+// has private gradients
+void compute_gradients(NeuralNetwork_t *net, float *input, float *target,
+                       float **gradients, float **bias_gradients);
+void apply_updates(NeuralNetwork_t *net, float **gradients,
+                   float **bias_gradients, int batch_size);
+
 // UTIL FUNCS
 void initialize_layer(Layer_t *layer, int input_size, int output_size,
                       ActivationFunc activation,
@@ -61,7 +73,11 @@ float linear(float x);
 float linear_derivative(float x);
 void softmax(float *array, int size);
 void softmax_derivative(float *output, float *gradient, int size);
-
 float softmax_placeholder(float x);
+
+// writing mode to file
+
+int save_Network(NeuralNetwork_t *network, char *filename);
+NeuralNetwork_t *load_Network(const char *filename);
 
 #endif // NNLIB_H

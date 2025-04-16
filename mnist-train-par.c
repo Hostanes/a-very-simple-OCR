@@ -11,7 +11,7 @@
 #define INPUT_SIZE 784
 #define HIDDEN_SIZE 256
 #define OUTPUT_SIZE 10
-#define LEARNING_RATE 0.0005f
+#define LEARNING_RATE 0.001f
 #define MOMENTUM 0.9f
 #define EPOCHS 5
 #define BATCH_SIZE 64
@@ -136,23 +136,89 @@ int main() {
   printf("\nRandom Test Image (True Label: %d):\n", true_label);
   display_image(sample_img);
 
+  int total_weights = 0;
+  {
+    for (int l = 1; l < net->num_layers; l++) {
+      Layer_t *layer = &net->layers[l];
+      total_weights += layer->input_size * layer->output_size;
+    }
+  }
+
   printf("starting training\n");
 
+  int batch_size = 8;
   for (int epoch = 0; epoch < EPOCHS; epoch++) {
     start_time = omp_get_wtime();
     float total_loss = 0;
 
-    for (int i = 0; i < train_size; i++) {
-      normalize_images(&data.images[i * INPUT_SIZE], img, 1);
+    // Shuffle data at start of each epoch
+    shuffle_data(data.images, data.labels, data.nImages);
 
-      memset(target, 0, sizeof(target));
-      target[data.labels[i]] = 1.0f;
+// Parallel region with reduction
+#pragma omp parallel reduction(+ : total_loss)
+    {
+      // Thread-local gradient buffers
+      float **thread_gradients = malloc(net->num_layers * sizeof(float *));
+      float **thread_bias_gradients = malloc(net->num_layers * sizeof(float *));
 
-      train(net, img, target);
-      float *output = net->layers[net->num_layers - 1].output;
-      total_loss += -logf(output[data.labels[i]] + 1e-10f);
+      for (int l = 0; l < net->num_layers; l++) {
+        int weights_size =
+            net->layers[l].input_size * net->layers[l].output_size;
+        thread_gradients[l] = calloc(weights_size, sizeof(float));
+        thread_bias_gradients[l] =
+            calloc(net->layers[l].output_size, sizeof(float));
+      }
+
+// Parallel minibatch processing
+#pragma omp for schedule(dynamic)
+      for (int b = 0; b < train_size; b += batch_size) {
+        float batch_loss = 0;
+
+        // Process minibatch
+        for (int i = b; i < b + batch_size && i < train_size; i++) {
+          float img[INPUT_SIZE];
+          float target[OUTPUT_SIZE];
+
+          normalize_images(&data.images[i * INPUT_SIZE], img, 1);
+          memset(target, 0, sizeof(target));
+          target[data.labels[i]] = 1.0f;
+
+          compute_gradients(net, img, target, thread_gradients,
+                            thread_bias_gradients);
+
+          float *output = net->layers[net->num_layers - 1].output;
+          batch_loss += -logf(output[data.labels[i]] + 1e-10f);
+        }
+
+// Synchronized weight update, TODO this is the largest bottleneck
+#pragma omp critical
+        {
+          apply_updates(net, thread_gradients, thread_bias_gradients,
+                        batch_size);
+
+          // Reset gradients
+          for (int l = 0; l < net->num_layers; l++) {
+            memset(thread_gradients[l], 0,
+                   net->layers[l].input_size * net->layers[l].output_size *
+                       sizeof(float));
+            memset(thread_bias_gradients[l], 0,
+                   net->layers[l].output_size * sizeof(float));
+          }
+        }
+
+        total_loss += batch_loss;
+      }
+
+      // Free thread-local memory
+      for (int l = 0; l < net->num_layers; l++) {
+        free(thread_gradients[l]);
+        free(thread_bias_gradients[l]);
+      }
+      free(thread_gradients);
+      free(thread_bias_gradients);
     }
 
+    // Validation (serial)
     int correct = 0;
     for (int i = train_size; i < data.nImages; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
@@ -175,7 +241,7 @@ int main() {
   int predicted = predict(net, img);
   printf("Predicted Label: %d\n", predicted);
 
-  save_Network(net, "series-test-1.nn");
+  save_Network(net, "parallel-test.nn");
 
   free_network(net);
   free(data.images);

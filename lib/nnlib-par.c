@@ -1,3 +1,11 @@
+/*
+  version of nnlib.c that parallelizes each sample's operations
+  parallel:
+  - forward
+  - backward
+  - NOT softmax, mish me7erze
+*/
+
 #include "nnlib.h"
 
 float relu(float x) { return x > 0 ? x : 0; }
@@ -112,49 +120,50 @@ float *forward_pass(NeuralNetwork_t *net, float *input) {
   for (int i = 0; i < net->num_layers; i++) {
     Layer_t *layer = &net->layers[i];
 
-    // TODO parallelize this
-    // Compute Wx + b
+// Parallelize the dot product
+#pragma omp parallel for
     for (int j = 0; j < layer->output_size; j++) {
-      layer->input[j] = layer->biases[j];
+      float sum = layer->biases[j];
       for (int k = 0; k < layer->input_size; k++) {
-        layer->input[j] +=
-            current_input[k] * layer->weights[k * layer->output_size + j];
+        sum += current_input[k] * layer->weights[k * layer->output_size + j];
       }
+      layer->input[j] = sum;
     }
 
-    // ACTIVATION
+    // Parallelize activation
     if (layer->activation == softmax_placeholder) {
       memcpy(layer->output, layer->input, layer->output_size * sizeof(float));
       softmax(layer->output, layer->output_size);
     } else {
+#pragma omp parallel for
       for (int j = 0; j < layer->output_size; j++) {
         layer->output[j] = layer->activation(layer->input[j]);
       }
     }
+
     current_input = layer->output;
   }
-
   return current_input;
 }
 
 void backward_pass(NeuralNetwork_t *net, float *input, float *target) {
-  // Forward pass to store each output, not good organization , TODO refactor
   float *output = forward_pass(net, input);
   Layer_t *output_layer = &net->layers[net->num_layers - 1];
 
-  // alloc gradients
-  float **deltas = (float **)malloc(net->num_layers * sizeof(float *));
+  // Allocate deltas
+  float **deltas = malloc(net->num_layers * sizeof(float *));
   for (int i = 0; i < net->num_layers; i++) {
-    deltas[i] = (float *)calloc(net->layers[i].output_size, sizeof(float));
+    deltas[i] = calloc(net->layers[i].output_size, sizeof(float));
   }
 
-  // ACTIVATION
-  // Output layer gradient
+  // PARALLEL
   if (output_layer->activation == softmax_placeholder) {
+#pragma omp parallel for
     for (int i = 0; i < output_layer->output_size; i++) {
       deltas[net->num_layers - 1][i] = output_layer->output[i] - target[i];
     }
   } else {
+#pragma omp parallel for
     for (int i = 0; i < output_layer->output_size; i++) {
       float error = output_layer->output[i] - target[i];
       deltas[net->num_layers - 1][i] =
@@ -162,53 +171,50 @@ void backward_pass(NeuralNetwork_t *net, float *input, float *target) {
     }
   }
 
-  // Backprop
+  // PARALLEL
   for (int l = net->num_layers - 2; l >= 0; l--) {
-    Layer_t *current_layer = &net->layers[l];
-    Layer_t *next_layer = &net->layers[l + 1];
+    Layer_t *current = &net->layers[l];
+    Layer_t *next = &net->layers[l + 1];
 
-    for (int i = 0; i < current_layer->output_size; i++) {
+#pragma omp parallel for
+    for (int i = 0; i < current->output_size; i++) {
       float error = 0;
-      for (int j = 0; j < next_layer->output_size; j++) {
-        error += next_layer->weights[i * next_layer->output_size + j] *
-                 deltas[l + 1][j];
+      for (int j = 0; j < next->output_size; j++) {
+        error += next->weights[i * next->output_size + j] * deltas[l + 1][j];
       }
-      deltas[l][i] =
-          error * current_layer->activation_derivative(current_layer->input[i]);
+      deltas[l][i] = error * current->activation_derivative(current->input[i]);
     }
   }
 
-  // Update weights and biases
   float *prev_output = input;
   for (int l = 0; l < net->num_layers; l++) {
     Layer_t *layer = &net->layers[l];
 
-    // Update weights
+// PARALLEL
+#pragma omp parallel for
     for (int i = 0; i < layer->input_size; i++) {
       for (int j = 0; j < layer->output_size; j++) {
         int idx = i * layer->output_size + j;
         float gradient = prev_output[i] * deltas[l][j];
-
-        // Momentum update
         layer->weight_momentum[idx] =
             net->momentum * layer->weight_momentum[idx] +
             net->learning_rate * gradient;
-
         layer->weights[idx] -= layer->weight_momentum[idx];
       }
     }
 
-    // Update biases
+// PARALLEL
+#pragma omp parallel for
     for (int j = 0; j < layer->output_size; j++) {
       layer->bias_momentum[j] = net->momentum * layer->bias_momentum[j] +
                                 net->learning_rate * deltas[l][j];
-
       layer->biases[j] -= layer->bias_momentum[j];
     }
 
     prev_output = layer->output;
   }
 
+  // Clean up
   for (int i = 0; i < net->num_layers; i++) {
     free(deltas[i]);
   }
