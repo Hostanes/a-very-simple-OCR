@@ -367,138 +367,228 @@ float calculate_loss(NeuralNetwork_t *net, float *output, float *target) {
 
 float softmax_placeholder(float x) { return x; }
 
-int save_Network(NeuralNetwork_t *network, char *filename) {
-  //
-
+int save_Network(NeuralNetwork_t *network, const char *filename) {
   FILE *fp = fopen(filename, "wb");
   if (!fp) {
     perror("Failed to open file for writing");
     return -1;
   }
 
-  // header
+  // Header
   uint8_t magic = MAGIC_NUMBER;
-  uint32_t version = network->version;
+  uint32_t version = FILE_VERSION;
   fwrite(&magic, sizeof(uint8_t), 1, fp);
   fwrite(&version, sizeof(uint32_t), 1, fp);
 
-  // layer count
-  uint8_t num_layers = network->num_layers;
+  // Network configuration
+  fwrite(&network->learning_rate, sizeof(float), 1, fp);
+  fwrite(&network->momentum, sizeof(float), 1, fp);
+  fwrite(&network->version, sizeof(int), 1, fp);
+
+  // Layer count (including input layer)
+  uint8_t num_layers = network->num_layers + 1;
   fwrite(&num_layers, sizeof(uint8_t), 1, fp);
 
-  // layer sizes array of ints
+  // Layer sizes (input layer first)
+  uint32_t input_size = network->layers[0].input_size;
+  fwrite(&input_size, sizeof(uint32_t), 1, fp);
+
   for (int i = 0; i < network->num_layers; i++) {
     uint32_t size = network->layers[i].output_size;
     fwrite(&size, sizeof(uint32_t), 1, fp);
   }
 
-  // weights and biases
-  for (int l = 1; l < network->num_layers; l++) {
+  // Activation functions
+  for (int i = 0; i < network->num_layers; i++) {
+    ActivationType act_type = ACT_RELU; // default
+
+    if (network->layers[i].activation == relu) {
+      act_type = ACT_RELU;
+   } else if (network->layers[i].activation == softmax_placeholder) {
+      act_type = ACT_SOFTMAX;
+    }
+
+    fwrite(&act_type, sizeof(ActivationType), 1, fp);
+  }
+
+  // Weights and biases
+  for (int l = 0; l < network->num_layers; l++) {
     Layer_t *layer = &network->layers[l];
     size_t weights_size = layer->input_size * layer->output_size;
     size_t biases_size = layer->output_size;
 
-    fwrite(layer->weights, sizeof(float), weights_size, fp);
-    fwrite(layer->biases, sizeof(float), biases_size, fp);
+    if (fwrite(layer->weights, sizeof(float), weights_size, fp) !=
+            weights_size ||
+        fwrite(layer->biases, sizeof(float), biases_size, fp) != biases_size) {
+      fclose(fp);
+      return -1;
+    }
   }
 
   fclose(fp);
   return 0;
-  return 0;
 }
 
-// NeuralNetwork_t *load_network(const char *filename) {
-//   FILE *fp = fopen(filename, "rb");
-//   if (!fp) {
-//     perror("Failed to open file for reading");
-//     return NULL;
-//   }
+NeuralNetwork_t *load_Network(const char *filename) {
+  FILE *fp = fopen(filename, "rb");
+  if (!fp) {
+    perror("Failed to open file for reading");
+    return NULL;
+  }
 
-//   // Read and verify header
-//   uint8_t magic;
-//   uint32_t version;
-//   if (fread(&magic, sizeof(uint8_t), 1, fp) != 1 ||
-//       fread(&version, sizeof(uint32_t), 1, fp) != 1) {
-//     fprintf(stderr, "Failed to read file header\n");
-//     fclose(fp);
-//     return NULL;
-//   }
+  // Read and verify header
+  uint8_t magic;
+  uint32_t file_version;
+  if (fread(&magic, sizeof(uint8_t), 1, fp) != 1 ||
+      fread(&file_version, sizeof(uint32_t), 1, fp) != 1) {
+    fprintf(stderr, "Failed to read file header\n");
+    fclose(fp);
+    return NULL;
+  }
 
-//   // check magic number
-//   if (magic != MAGIC_NUMBER) {
-//     fprintf(stderr, "ERROR: bad magic number\n");
-//     fclose(fp);
-//     return NULL;
-//   }
+  if (magic != MAGIC_NUMBER) {
+    fprintf(stderr, "Invalid file format (bad magic number)\n");
+    fclose(fp);
+    return NULL;
+  }
 
-//   // layer count
-//   uint8_t num_layers;
-//   if (fread(&num_layers, sizeof(uint8_t), 1, fp) != 1) {
-//     fprintf(stderr, "ERROR: failed to read layer count\n");
-//     fclose(fp);
-//     return NULL;
-//   }
+  if (file_version > FILE_VERSION) {
+    fprintf(stderr, "Unsupported file version: %d (max supported: %d)\n",
+            file_version, FILE_VERSION);
+    fclose(fp);
+    return NULL;
+  }
 
-//   // Read layer sizes
-//   uint32_t *layer_sizes = malloc(num_layers * sizeof(uint32_t));
-//   if (!layer_sizes) {
-//     perror("ERROR: layer sizes malloc failed");
-//     fclose(fp);
-//     return NULL;
-//   }
+  // Read network configuration
+  float learning_rate, momentum;
+  int version;
+  if (fread(&learning_rate, sizeof(float), 1, fp) != 1 ||
+      fread(&momentum, sizeof(float), 1, fp) != 1 ||
+      fread(&version, sizeof(int), 1, fp) != 1) {
+    fprintf(stderr, "Failed to read network configuration\n");
+    fclose(fp);
+    return NULL;
+  }
 
-//   for (int i = 0; i < num_layers; i++) {
-//     if (fread(&layer_sizes[i], sizeof(uint32_t), 1, fp) != 1) {
-//       fprintf(stderr, "ERROR: Failed to read layer size %d\n", i);
-//       free(layer_sizes);
-//       fclose(fp);
-//       return NULL;
-//     }
-//   }
+  // Read layer count
+  uint8_t num_layers;
+  if (fread(&num_layers, sizeof(uint8_t), 1, fp) != 1) {
+    fprintf(stderr, "Failed to read layer count\n");
+    fclose(fp);
+    return NULL;
+  }
 
-//   // TODO fix activations reading currently defaults to relu
-//   ActivationFunc *activations =
-//       malloc((num_layers - 1) * sizeof(ActivationFunc));
-//   ActivationDerivative *derivatives =
-//       malloc((num_layers - 1) * sizeof(ActivationDerivative));
-//   for (int i = 0; i < num_layers - 2; i++) {
-//     activations[i] = relu;
-//     derivatives[i] = relu_derivative;
-//   }
+  if (num_layers < 2) {
+    fprintf(stderr, "Invalid network: must have at least 2 layers\n");
+    fclose(fp);
+    return NULL;
+  }
 
-//   activations[num_layers - 1] = softmax_placeholder;
+  // Read layer sizes
+  uint32_t *layer_sizes = malloc(num_layers * sizeof(uint32_t));
+  if (!layer_sizes) {
+    perror("Memory allocation failed for layer sizes");
+    fclose(fp);
+    return NULL;
+  }
 
-//   NeuralNetwork_t *net = create_network(
-//       (int *)layer_sizes, num_layers, activations, derivatives, 0.01f,
-//       0.9f); // default learning rate and momentum (momentum currently
-//       unused)
-//   free(layer_sizes);
-//   free(activations);
-//   free(derivatives);
+  for (int i = 0; i < num_layers; i++) {
+    if (fread(&layer_sizes[i], sizeof(uint32_t), 1, fp) != 1) {
+      fprintf(stderr, "Failed to read layer size %d\n", i);
+      free(layer_sizes);
+      fclose(fp);
+      return NULL;
+    }
+  }
 
-//   if (!net) {
-//     fclose(fp);
-//     return NULL;
-//   }
-//   net->version = version;
+  // Read activation functions
+  ActivationType *act_types = malloc((num_layers - 1) * sizeof(ActivationType));
+  if (!act_types) {
+    perror("Memory allocation failed for activation types");
+    free(layer_sizes);
+    fclose(fp);
+    return NULL;
+  }
 
-//   // Read weights and biases for each layer
-//   for (int l = 1; l < net->num_layers; l++) {
-//     Layer_t *layer = &net->layers[l];
-//     size_t weights_size = layer->input_size * layer->output_size;
-//     size_t biases_size = layer->output_size;
+  for (int i = 0; i < num_layers - 1; i++) {
+    if (fread(&act_types[i], sizeof(ActivationType), 1, fp) != 1) {
+      fprintf(stderr, "Failed to read activation type for layer %d\n", i);
+      free(layer_sizes);
+      free(act_types);
+      fclose(fp);
+      return NULL;
+    }
+  }
 
-//     if (fread(layer->weights, sizeof(float), weights_size, fp) !=
-//             weights_size ||
-//         fread(layer->biases, sizeof(float), biases_size, fp) != biases_size)
-//         {
-//       fprintf(stderr, "Failed to read layer %d parameters\n", l);
-//       free_network(net);
-//       fclose(fp);
-//       return NULL;
-//     }
-//   }
+  // Create activation function arrays
+  ActivationFunc *activations =
+      malloc((num_layers - 1) * sizeof(ActivationFunc));
+  ActivationDerivative *derivatives =
+      malloc((num_layers - 1) * sizeof(ActivationDerivative));
 
-//   fclose(fp);
-//   return net;
-// }
+  if (!activations || !derivatives) {
+    perror("Memory allocation failed for activation functions");
+    free(layer_sizes);
+    free(act_types);
+    free(activations);
+    free(derivatives);
+    fclose(fp);
+    return NULL;
+  }
+
+  for (int i = 0; i < num_layers - 1; i++) {
+    switch (act_types[i]) {
+    case ACT_RELU:
+      activations[i] = relu;
+      derivatives[i] = relu_derivative;
+      break;
+    case ACT_SOFTMAX:
+      activations[i] = softmax_placeholder;
+      derivatives[i] = NULL; // Handled specially
+      break;
+    default:
+      fprintf(stderr, "Unknown activation type %d\n", act_types[i]);
+      free(layer_sizes);
+      free(act_types);
+      free(activations);
+      free(derivatives);
+      fclose(fp);
+      return NULL;
+    }
+  }
+
+  // Create network
+  NeuralNetwork_t *net =
+      create_network((int *)layer_sizes, num_layers, activations, derivatives,
+                     learning_rate, momentum);
+
+  free(layer_sizes);
+  free(act_types);
+  free(activations);
+  free(derivatives);
+
+  if (!net) {
+    fclose(fp);
+    return NULL;
+  }
+  net->version = version;
+
+  // Read weights and biases
+  for (int l = 0; l < net->num_layers; l++) {
+    Layer_t *layer = &net->layers[l];
+    size_t weights_size = layer->input_size * layer->output_size;
+    size_t biases_size = layer->output_size;
+
+    if (fread(layer->weights, sizeof(float), weights_size, fp) !=
+            weights_size ||
+        fread(layer->biases, sizeof(float), biases_size, fp) != biases_size) {
+      fprintf(stderr, "Failed to read layer %d parameters\n", l);
+      free_network(net);
+      fclose(fp);
+      return NULL;
+    }
+  }
+
+  fclose(fp);
+  return net;
+}

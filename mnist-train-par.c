@@ -204,8 +204,7 @@ int main() {
             memset(thread_bias_gradients[l], 0,
                    net->layers[l].output_size * sizeof(float));
           }
-        }
-
+        } // END critical
         total_loss += batch_loss;
       }
 

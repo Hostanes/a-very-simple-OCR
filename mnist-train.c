@@ -1,4 +1,3 @@
-
 #include "lib/nnlib.h"
 #include <math.h>
 #include <omp.h>
@@ -102,7 +101,19 @@ void normalize_images(unsigned char *input, float *output, int count) {
   }
 }
 
-int main() {
+void print_usage(const char *program_name) {
+  printf("Usage: %s <output_filename.nn>\n", program_name);
+  printf("Example: %s my_model.nn\n", program_name);
+}
+
+int main(int argc, char *argv[]) {
+  if (argc != 2) {
+    print_usage(argv[0]);
+    return 1;
+  }
+
+  const char *output_filename = argv[1];
+
   InputData_t data = {0};
   double start_time, end_time;
   double time_taken;
@@ -136,7 +147,8 @@ int main() {
   printf("\nRandom Test Image (True Label: %d):\n", true_label);
   display_image(sample_img);
 
-  printf("starting training\n");
+  printf("Starting training...\n");
+  printf("Model will be saved to: %s\n", output_filename);
 
   for (int epoch = 0; epoch < EPOCHS; epoch++) {
     start_time = omp_get_wtime();
@@ -168,14 +180,21 @@ int main() {
            time_taken);
   }
 
-  // Convert and predict
   for (int k = 0; k < INPUT_SIZE; k++)
     img[k] = sample_img[k] / 255.0f;
 
   int predicted = predict(net, img);
   printf("Predicted Label: %d\n", predicted);
 
-  save_Network(net, "series-test-1.nn");
+  if (save_Network(net, output_filename) != 0) {
+    fprintf(stderr, "Error: Failed to save model to %s\n", output_filename);
+    free_network(net);
+    free(data.images);
+    free(data.labels);
+    return 1;
+  }
+
+  printf("Model successfully saved to %s\n", output_filename);
 
   free_network(net);
   free(data.images);

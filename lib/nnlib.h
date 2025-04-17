@@ -11,6 +11,18 @@
 // neural network magic number, used at the top of the model file
 #define MAGIC_NUMBER 143 // 0x8f
 
+#define FILE_VERSION 1
+#define MAX_ACTIVATION_NAME_LEN 32
+
+// Add activation function type enum
+typedef enum {
+  ACT_RELU,
+  ACT_SIGMOID,
+  ACT_TANH,
+  ACT_LINEAR,
+  ACT_SOFTMAX
+} ActivationType;
+
 typedef float (*ActivationFunc)(float);
 typedef float (*ActivationDerivative)(float);
 
@@ -77,7 +89,7 @@ float softmax_placeholder(float x);
 
 // writing mode to file
 
-int save_Network(NeuralNetwork_t *network, char *filename);
+int save_Network(NeuralNetwork_t *network, const char *filename);
 NeuralNetwork_t *load_Network(const char *filename);
 
 #endif // NNLIB_H
