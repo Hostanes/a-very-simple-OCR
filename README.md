@@ -3,7 +3,7 @@
 
  Tested on random data and the MNIST handwritten character dataset
 
- Build similar to
+ Main neural network functionality is modified from:
  https://github.com/konrad-gajdus/miniMNIST-c
 ```
 
