@@ -1,4 +1,2 @@
 *.out
 *.o
-data/train-labels.idx1-ubyte
-data/train-images.idx3-ubyte
