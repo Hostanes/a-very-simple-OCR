@@ -130,7 +130,7 @@ void load_model() {
   if (model) {
     free_network(model);
   }
-  model = load_Network("serial.nn");
+  model = load_Network("ocl.nn");
   if (model) {
     printf("Model loaded successfully!\n");
   } else {

@@ -1,10 +1,11 @@
 // dot-prod-test.c
 #include <CL/cl.h>
+#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
-#define N 8192 // You can increase this as needed
+#define N 4096 // You can increase this as needed
 #define BLOCK_SIZE 16
 #define KERNEL_FILE "tests/matmul.cl"
 
@@ -77,11 +78,11 @@ void run_kernel(const char *kernel_name, size_t local_size[2]) {
 
   size_t global_size[2] = {N, N};
 
-  double start = clock() / (double)CLOCKS_PER_SEC;
+  double start = omp_get_wtime();
   clEnqueueNDRangeKernel(queue, kernel, 2, NULL, global_size, local_size, 0,
                          NULL, NULL);
   clFinish(queue);
-  double end = clock() / (double)CLOCKS_PER_SEC;
+  double end = omp_get_wtime();
   printf("%s: %f sec\n", kernel_name, end - start);
 
   clEnqueueReadBuffer(queue, bufC, CL_TRUE, 0, sizeof(float) * N * N, C, 0,
