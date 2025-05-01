@@ -26,12 +26,13 @@ int main() {
   // Initialize random seed
   srand(time(NULL));
 
-  // Load both models
-  NeuralNetwork_t *parallel_model = load_Network("parallel.nn");
+  // Load all three models
   NeuralNetwork_t *serial_model = load_Network("serial.nn");
+  NeuralNetwork_t *omp_model = load_Network("omp.nn");
+  NeuralNetwork_t *ocl_model = load_Network("ocl.nn");
 
-  if (!parallel_model || !serial_model) {
-    fprintf(stderr, "Failed to load one or both models\n");
+  if (!serial_model || !omp_model || !ocl_model) {
+    fprintf(stderr, "Failed to load one or more models\n");
     return 1;
   }
 
@@ -53,33 +54,39 @@ int main() {
   float normalized_input[INPUT_SIZE];
   normalize_image(image, normalized_input);
 
-  // Get predictions from both models
-  float *parallel_output = forward_pass(parallel_model, normalized_input);
+  // Get predictions from each model
   float *serial_output = forward_pass(serial_model, normalized_input);
+  float *omp_output = forward_pass(omp_model, normalized_input);
+  float *ocl_output = forward_pass(ocl_model, normalized_input);
 
   // Print comparison
-  printf("\nModel Comparison:\n");
-  printf("%-10s %-15s %-15s\n", "Class", "Parallel Output", "Serial Output");
-  printf("----------------------------------------\n");
+  printf("\nModel Output Comparison:\n");
+  printf("%-10s %-15s %-15s %-15s\n", "Class", "Serial", "OpenMP", "OpenCL");
+  printf("------------------------------------------------------------\n");
 
   for (int i = 0; i < 10; i++) {
-    printf("%-10d %-15.6f %-15.6f\n", i, parallel_output[i], serial_output[i]);
+    printf("%-10d %-15.6f %-15.6f %-15.6f\n", i, serial_output[i],
+           omp_output[i], ocl_output[i]);
   }
 
   // Get predicted classes
-  int parallel_pred = predict(parallel_model, normalized_input);
   int serial_pred = predict(serial_model, normalized_input);
+  int omp_pred = predict(omp_model, normalized_input);
+  int ocl_pred = predict(ocl_model, normalized_input);
 
   printf("\nPredictions:\n");
-  printf("Parallel Model: %d (confidence: %.2f%%)\n", parallel_pred,
-         parallel_output[parallel_pred] * 100);
-  printf("Serial Model:   %d (confidence: %.2f%%)\n", serial_pred,
+  printf("Serial Model:  %d (confidence: %.2f%%)\n", serial_pred,
          serial_output[serial_pred] * 100);
-  printf("True Label:     %d\n", true_label);
+  printf("OpenMP Model:  %d (confidence: %.2f%%)\n", omp_pred,
+         omp_output[omp_pred] * 100);
+  printf("OpenCL Model:  %d (confidence: %.2f%%)\n", ocl_pred,
+         ocl_output[ocl_pred] * 100);
+  printf("True Label:    %d\n", true_label);
 
   // Clean up
-  free_network(parallel_model);
   free_network(serial_model);
+  free_network(omp_model);
+  free_network(ocl_model);
   free(test_data.images);
   free(test_data.labels);
 

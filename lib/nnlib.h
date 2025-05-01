@@ -1,7 +1,6 @@
 #ifndef NNLIB_H
 #define NNLIB_H
 
-#include <CL/cl.h>
 #include <math.h>
 #include <omp.h>
 #include <stdint.h>

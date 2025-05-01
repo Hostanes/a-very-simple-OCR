@@ -15,11 +15,11 @@ base_name="${input_file%.*}"
 output_file="bin/${base_name}.o"
 
 echo "Compiling $input_file to $output_file..."
-gcc "$input_file" lib/nnlib-par.c lib/matrix-math.c -O3 -march=native -ffast-math -lm -o "$output_file" -g -fopenmp
+gcc "$input_file" lib/nnlib-cl.c lib/matrix-math.c -O3 -march=native -ffast-math -lm -o "$output_file" -g -lOpenCL -fopenmp
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful. Running program..."
-    ./"$output_file"
+    ./"$output_file" ocl.nn
 else
     echo "Compilation failed"
     exit 1

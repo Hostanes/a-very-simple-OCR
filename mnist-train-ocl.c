@@ -1,4 +1,5 @@
-#include "lib/nnlib.h"
+#include "lib/nnlib-cl.h"
+#include <CL/cl.h>
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>
@@ -22,6 +23,92 @@ typedef struct {
   unsigned char *images, *labels;
   int nImages;
 } InputData_t;
+
+// Helper function to read kernel source from file
+char *read_kernel_source(const char *filename, size_t *source_size) {
+  FILE *file = fopen(filename, "r");
+  if (!file) {
+    fprintf(stderr, "Failed to open kernel file: %s\n", filename);
+    return NULL;
+  }
+
+  fseek(file, 0, SEEK_END);
+  *source_size = ftell(file);
+  rewind(file);
+
+  char *source = (char *)malloc(*source_size + 1);
+  fread(source, 1, *source_size, file);
+  source[*source_size] = '\0';
+
+  fclose(file);
+  return source;
+}
+
+// Initialize OpenCL context and command queue
+cl_int init_opencl(cl_context *context, cl_command_queue *queue,
+                   cl_program *program) {
+  cl_int err;
+  cl_platform_id platform;
+  cl_device_id device;
+
+  // Get platform and device
+  err = clGetPlatformIDs(1, &platform, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error getting platform ID: %d\n", err);
+    return err;
+  }
+
+  err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error getting device ID: %d\n", err);
+    return err;
+  }
+
+  // Create context
+  *context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error creating context: %d\n", err);
+    return err;
+  }
+
+  // Create command queue
+  *queue = clCreateCommandQueueWithProperties(*context, device, 0, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error creating command queue: %d\n", err);
+    return err;
+  }
+
+  // Read and compile kernel source
+  size_t source_size;
+  char *source = read_kernel_source("lib/nn-kernel.cl", &source_size);
+  if (!source) {
+    return CL_INVALID_VALUE;
+  }
+
+  *program = clCreateProgramWithSource(*context, 1, (const char **)&source,
+                                       &source_size, &err);
+  free(source);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error creating program: %d\n", err);
+    return err;
+  }
+
+  // Build program
+  err = clBuildProgram(*program, 1, &device, NULL, NULL, NULL);
+  if (err != CL_SUCCESS) {
+    size_t log_size;
+    clGetProgramBuildInfo(*program, device, CL_PROGRAM_BUILD_LOG, 0, NULL,
+                          &log_size);
+    char *log = (char *)malloc(log_size);
+    clGetProgramBuildInfo(*program, device, CL_PROGRAM_BUILD_LOG, log_size, log,
+                          NULL);
+    fprintf(stderr, "Build error:\n%s\n", log);
+    free(log);
+    return err;
+  }
+
+  return CL_SUCCESS;
+}
 
 void display_image(unsigned char *image) {
   for (int i = 0; i < IMAGE_SIZE; i++) {
@@ -112,8 +199,17 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const char *output_filename = argv[1];
+  // Initialize OpenCL
+  cl_context context;
+  cl_command_queue queue;
+  cl_program program;
+  cl_int err = init_opencl(&context, &queue, &program);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "OpenCL initialization failed\n");
+    return 1;
+  }
 
+  const char *output_filename = argv[1];
   InputData_t data = {0};
   double start_time, end_time;
   double time_taken;
@@ -154,28 +250,55 @@ int main(int argc, char *argv[]) {
     start_time = omp_get_wtime();
     float total_loss = 0;
 
+    printf("Epoch %d/%d\n", epoch + 1, EPOCHS);
+    printf("[");
+    fflush(stdout); // Ensure immediate output
+
+    // Calculate print interval (every 2% progress)
+    int print_interval = train_size / 50;
+    if (print_interval < 1)
+      print_interval = 1;
+
     for (int i = 0; i < train_size; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
 
       memset(target, 0, sizeof(target));
       target[data.labels[i]] = 1.0f;
 
-      train(net, img, target);
+      train(net, img, target, context, queue, program);
+
       float *output = net->layers[net->num_layers - 1].output;
       total_loss += -logf(output[data.labels[i]] + 1e-10f);
+
+      // Print progress bar
+      if (i % print_interval == 0 || i == train_size - 1) {
+        int progress = (i * 100) / train_size;
+        printf("\r[");
+        for (int p = 0; p < 50; p++) {
+          if (p < progress / 2)
+            printf("=");
+          else if (p == progress / 2)
+            printf(">");
+          else
+            printf(" ");
+        }
+        printf("] %d%%", progress);
+        fflush(stdout);
+      }
     }
 
     int correct = 0;
     for (int i = train_size; i < data.nImages; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
-      if (predict(net, img) == data.labels[i])
+      if (predict(net, img, context, queue, program) == data.labels[i])
         correct++;
     }
 
     end_time = omp_get_wtime();
     time_taken = end_time - start_time;
 
-    printf("Epoch %d, Accuracy: %.2f%%, Avg Loss: %.4f, Time: %.2f seconds\n",
+    // Clear the progress bar and print epoch stats
+    printf("\rEpoch %d, Accuracy: %.2f%%, Avg Loss: %.4f, Time: %.2f seconds\n",
            epoch + 1, (float)correct / test_size * 100, total_loss / train_size,
            time_taken);
   }
@@ -183,7 +306,8 @@ int main(int argc, char *argv[]) {
   for (int k = 0; k < INPUT_SIZE; k++)
     img[k] = sample_img[k] / 255.0f;
 
-  int predicted = predict(net, img);
+  // Final prediction with OpenCL objects
+  int predicted = predict(net, img, context, queue, program);
   printf("Predicted Label: %d\n", predicted);
 
   if (save_Network(net, output_filename) != 0) {
@@ -191,14 +315,21 @@ int main(int argc, char *argv[]) {
     free_network(net);
     free(data.images);
     free(data.labels);
+    clReleaseProgram(program);
+    clReleaseCommandQueue(queue);
+    clReleaseContext(context);
     return 1;
   }
 
   printf("Model successfully saved to %s\n", output_filename);
 
+  // Cleanup
   free_network(net);
   free(data.images);
   free(data.labels);
+  clReleaseProgram(program);
+  clReleaseCommandQueue(queue);
+  clReleaseContext(context);
 
   return 0;
 }
