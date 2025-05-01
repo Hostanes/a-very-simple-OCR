@@ -56,12 +56,19 @@ NeuralNetwork_t *create_network(int *layer_sizes, int num_layers,
 void free_network(NeuralNetwork_t *net);
 
 // PROP FUNCS
-float *forward_pass(NeuralNetwork_t *net, float *input);
-void backward_pass(NeuralNetwork_t *net, float *input, float *target);
 
-// TRAINING FUNCS
-void train(NeuralNetwork_t *net, float *input, float *target);
-int predict(NeuralNetwork_t *net, float *input);
+float *forward_pass(NeuralNetwork_t *net, float *input, cl_context context,
+                    cl_command_queue queue, cl_program program);
+void backward_pass(NeuralNetwork_t *net, float *input, float *target,
+                   cl_context context, cl_command_queue queue,
+                   cl_program program);
+
+void train(NeuralNetwork_t *net, float *input, float *target,
+           cl_context context, cl_command_queue queue, cl_program program);
+
+int predict(NeuralNetwork_t *net, float *input, cl_context context,
+            cl_command_queue queue, cl_program program);
+
 float calculate_loss(NeuralNetwork_t *net, float *output, float *target);
 
 // alternative function to train, used for parallelized gradients, each thread
