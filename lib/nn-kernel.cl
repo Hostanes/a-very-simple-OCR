@@ -3,6 +3,58 @@
 
 */
 
+__kernel void softmax_layer(__global float *input, __global float *output,
+                            __local float *local_max, __local float *local_sum,
+                            const int size) {
+  int gid = get_global_id(0);
+  int lid = get_local_id(0);
+  int group_size = get_local_size(0);
+  const float epsilon = 1e-10f; // Small constant to prevent division by zero
+
+  // First pass: find max value (work-group reduction)
+  float max_val = -INFINITY;
+  for (int i = gid; i < size; i += get_global_size(0)) {
+    max_val = fmax(max_val, input[i]);
+  }
+
+  local_max[lid] = max_val;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  // Reduce within work-group
+  for (int stride = group_size / 2; stride > 0; stride /= 2) {
+    if (lid < stride) {
+      local_max[lid] = fmax(local_max[lid], local_max[lid + stride]);
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+
+  max_val = local_max[0];
+
+  // Second pass: compute sum of exponentials (work-group reduction)
+  float sum = 0.0f;
+  for (int i = gid; i < size; i += get_global_size(0)) {
+    sum += exp(input[i] - max_val);
+  }
+
+  local_sum[lid] = sum;
+  barrier(CLK_LOCAL_MEM_FENCE);
+
+  // Reduce within work-group
+  for (int stride = group_size / 2; stride > 0; stride /= 2) {
+    if (lid < stride) {
+      local_sum[lid] += local_sum[lid + stride];
+    }
+    barrier(CLK_LOCAL_MEM_FENCE);
+  }
+
+  sum = local_sum[0] + epsilon; // Add epsilon to denominator
+
+  // Final pass: compute softmax
+  if (gid < size) {
+    output[gid] = exp(input[gid] - max_val) / sum;
+  }
+}
+
 // Forward pass kernel
 __kernel void
 forward_layer(__global const float *input, __global const float *weights,

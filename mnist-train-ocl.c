@@ -11,8 +11,8 @@
 #define INPUT_SIZE 784
 #define HIDDEN_SIZE 256
 #define OUTPUT_SIZE 10
-#define LEARNING_RATE 0.0005f
-#define MOMENTUM 0.9f
+#define LEARNING_RATE 0.0001f
+#define MOMENTUM 0.5f
 #define EPOCHS 5
 #define BATCH_SIZE 64
 #define IMAGE_SIZE 28
@@ -220,8 +220,14 @@ int main(int argc, char *argv[]) {
                                          NULL};
 
   srand(time(NULL));
-  NeuralNetwork_t *net = create_network(layer_Sizes, 4, activations,
-                                        derivatives, LEARNING_RATE, MOMENTUM);
+
+  // Create network with OpenCL context
+  NeuralNetwork_t *net =
+      create_network(layer_Sizes, 4, activations, derivatives, LEARNING_RATE,
+                     MOMENTUM, context);
+
+  // Upload initial weights to device
+  upload_network_to_device(net, queue);
 
   read_mnist_images(TRAIN_IMG_PATH, &data.images, &data.nImages);
   read_mnist_labels(TRAIN_LBL_PATH, &data.labels, &data.nImages);
@@ -231,15 +237,19 @@ int main(int argc, char *argv[]) {
   int train_size = (int)(data.nImages * TRAIN_SPLIT);
   int test_size = data.nImages - train_size;
 
-  float img[INPUT_SIZE];
-  float target[OUTPUT_SIZE];
+  // Create buffers for input and target (allocate once, reuse)
+  float *img = (float *)malloc(INPUT_SIZE * sizeof(float));
+  float *target = (float *)malloc(OUTPUT_SIZE * sizeof(float));
+  cl_mem img_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
+                                  INPUT_SIZE * sizeof(float), NULL, &err);
+  cl_mem target_buf = clCreateBuffer(context, CL_MEM_READ_ONLY,
+                                     OUTPUT_SIZE * sizeof(float), NULL, &err);
 
   // Pick a random test image
   int idx = train_size + rand() % test_size;
   unsigned char *sample_img = &data.images[idx * INPUT_SIZE];
   int true_label = data.labels[idx];
 
-  // Display the image
   printf("\nRandom Test Image (True Label: %d):\n", true_label);
   display_image(sample_img);
 
@@ -252,22 +262,28 @@ int main(int argc, char *argv[]) {
 
     printf("Epoch %d/%d\n", epoch + 1, EPOCHS);
     printf("[");
-    fflush(stdout); // Ensure immediate output
+    fflush(stdout);
 
-    // Calculate print interval (every 2% progress)
     int print_interval = train_size / 50;
     if (print_interval < 1)
       print_interval = 1;
 
     for (int i = 0; i < train_size; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
-
-      memset(target, 0, sizeof(target));
+      memset(target, 0, OUTPUT_SIZE * sizeof(float));
       target[data.labels[i]] = 1.0f;
 
-      train(net, img, target, context, queue, program);
+      // Upload input and target to device
+      clEnqueueWriteBuffer(queue, img_buf, CL_TRUE, 0,
+                           INPUT_SIZE * sizeof(float), img, 0, NULL, NULL);
+      clEnqueueWriteBuffer(queue, target_buf, CL_TRUE, 0,
+                           OUTPUT_SIZE * sizeof(float), target, 0, NULL, NULL);
 
-      float *output = net->layers[net->num_layers - 1].output;
+      // Train using device buffers
+      train(net, img, target, queue, program);
+
+      // Calculate loss (need to load output)
+      float *output = forward_pass(net, img, queue, program, 1);
       total_loss += -logf(output[data.labels[i]] + 1e-10f);
 
       // Print progress bar
@@ -287,43 +303,41 @@ int main(int argc, char *argv[]) {
       }
     }
 
+    // Test accuracy
     int correct = 0;
     for (int i = train_size; i < data.nImages; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
-      if (predict(net, img, context, queue, program) == data.labels[i])
+      if (predict(net, img, queue, program) == data.labels[i])
         correct++;
     }
 
     end_time = omp_get_wtime();
     time_taken = end_time - start_time;
 
-    // Clear the progress bar and print epoch stats
     printf("\rEpoch %d, Accuracy: %.2f%%, Avg Loss: %.4f, Time: %.2f seconds\n",
            epoch + 1, (float)correct / test_size * 100, total_loss / train_size,
            time_taken);
   }
 
-  for (int k = 0; k < INPUT_SIZE; k++)
-    img[k] = sample_img[k] / 255.0f;
-
-  // Final prediction with OpenCL objects
-  int predicted = predict(net, img, context, queue, program);
+  // Final prediction
+  normalize_images(sample_img, img, 1);
+  int predicted = predict(net, img, queue, program);
   printf("Predicted Label: %d\n", predicted);
+
+  // Download weights before saving
+  download_network_from_device(net, queue);
 
   if (save_Network(net, output_filename) != 0) {
     fprintf(stderr, "Error: Failed to save model to %s\n", output_filename);
-    free_network(net);
-    free(data.images);
-    free(data.labels);
-    clReleaseProgram(program);
-    clReleaseCommandQueue(queue);
-    clReleaseContext(context);
-    return 1;
+  } else {
+    printf("Model successfully saved to %s\n", output_filename);
   }
 
-  printf("Model successfully saved to %s\n", output_filename);
-
   // Cleanup
+  free(img);
+  free(target);
+  clReleaseMemObject(img_buf);
+  clReleaseMemObject(target_buf);
   free_network(net);
   free(data.images);
   free(data.labels);
