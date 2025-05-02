@@ -15,25 +15,25 @@ typedef struct {
   cl_mem gradient;   // gradient for this layer
 } Layer_t;
 
-
 typedef struct {
-    int num_layers;
-    Layer_t *layers;
+  int num_layers;
+  Layer_t *layers;
 
-    cl_context context;
-    cl_command_queue queue;
-    cl_program program;
-    cl_device_id device;
+  cl_context context;
+  cl_command_queue queue;
+  cl_program program;
+  cl_device_id device;
 
-    // Kernels from kernels.cl
-    cl_kernel forward_relu_kernel;
-    cl_kernel forward_softmax_kernel;
-    cl_kernel backward_relu_kernel;
-    cl_kernel backward_softmax_kernel;
-    cl_kernel weight_gradient_kernel; // Added this line previously
+  // Kernels from kernels.cl
+  cl_kernel forward_relu_kernel;
+  cl_kernel forward_softmax_kernel;
+  cl_kernel backward_relu_kernel;
+  cl_kernel backward_softmax_kernel;
+  cl_kernel weight_gradient_kernel;
+  cl_kernel compute_output_grad_kernel;
 
-    // Host-side buffer to read final output
-    float *host_output;
+  // Host-side buffer to read final output
+  float *host_output;
 } NeuralNetwork_t;
 
 Layer_t create_Layer(cl_context context, int input_Size, int output_Size);

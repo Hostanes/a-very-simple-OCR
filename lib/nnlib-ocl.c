@@ -122,6 +122,8 @@ NeuralNetwork_t create_NeuralNetwork(cl_context context, cl_device_id device,
   net.backward_softmax_kernel =
       clCreateKernel(program, "backward_With_Softmax", &err);
   net.weight_gradient_kernel = clCreateKernel(program, "weight_gradient", &err);
+  net.compute_output_grad_kernel =
+      clCreateKernel(program, "compute_output_gradient", &err);
 
   for (int i = 0; i < net.num_layers; i++) {
     net.layers[i] = create_Layer(context, layer_sizes[i], layer_sizes[i + 1]);
@@ -213,79 +215,152 @@ void forward(NeuralNetwork_t *net, cl_command_queue queue, const float *input,
 
 void backward(NeuralNetwork_t *net, cl_command_queue queue, const float *target,
               int target_size, float learning_rate, float momentum) {
-  // Start from the last layer and move backwards
+  cl_int err;
+
+  // Create temporary target buffer (read-only)
+  cl_mem target_buffer =
+      clCreateBuffer(net->context, CL_MEM_READ_ONLY | CL_MEM_COPY_HOST_PTR,
+                     target_size * sizeof(float), (void *)target, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error creating target buffer: %d\n", err);
+    return;
+  }
+
+  // Process layers in reverse order
   for (int i = net->num_layers - 1; i >= 0; i--) {
     Layer_t *layer = &net->layers[i];
-    cl_kernel kernel;
+    size_t global_size = layer->output_size;
 
-    // Determine which kernel to use (Softmax for last layer, ReLU for others)
     if (i == net->num_layers - 1) {
-      kernel = net->backward_softmax_kernel;
+      // OUTPUT LAYER (Softmax) ------------------------------------------
 
-      // Write target to the gradient buffer of the last layer
-      clEnqueueWriteBuffer(queue, layer->gradient, CL_TRUE, 0,
-                           target_size * sizeof(float), target, 0, NULL, NULL);
+      // 1. Compute output gradients (activation - target)
+      err = clSetKernelArg(net->compute_output_grad_kernel, 0, sizeof(cl_mem),
+                           &layer->activation);
+      err |= clSetKernelArg(net->compute_output_grad_kernel, 1, sizeof(cl_mem),
+                            &layer->gradient);
+      err |= clSetKernelArg(net->compute_output_grad_kernel, 2, sizeof(cl_mem),
+                            &target_buffer);
+      err |= clSetKernelArg(net->compute_output_grad_kernel, 3, sizeof(int),
+                            &layer->output_size);
 
-      // Set kernel arguments for softmax backward pass
-      clSetKernelArg(kernel, 0, sizeof(cl_mem), &layer->weights);
-      clSetKernelArg(kernel, 1, sizeof(cl_mem), &layer->biases);
-      clSetKernelArg(kernel, 2, sizeof(cl_mem), &layer->weight_momentum);
-      clSetKernelArg(kernel, 3, sizeof(cl_mem), &layer->bias_momentum);
-      clSetKernelArg(kernel, 4, sizeof(cl_mem), &layer->activation);
-      clSetKernelArg(kernel, 5, sizeof(cl_mem), &layer->input);
-      clSetKernelArg(kernel, 6, sizeof(cl_mem),
-                     &layer->gradient); // Target is in gradient buffer
-      clSetKernelArg(kernel, 7, sizeof(int), &layer->input_size);
-      clSetKernelArg(kernel, 8, sizeof(int), &layer->output_size);
-      clSetKernelArg(kernel, 9, sizeof(float), &learning_rate);
-      clSetKernelArg(kernel, 10, sizeof(float), &momentum);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error setting output grad kernel args: %d\n", err);
+        break;
+      }
+
+      err = clEnqueueNDRangeKernel(queue, net->compute_output_grad_kernel, 1,
+                                   NULL, &global_size, NULL, 0, NULL, NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error enqueueing output grad kernel: %d\n", err);
+        break;
+      }
+
+      // 2. Update output layer weights and biases
+      err = clSetKernelArg(net->backward_softmax_kernel, 0, sizeof(cl_mem),
+                           &layer->weights);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 1, sizeof(cl_mem),
+                            &layer->biases);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 2, sizeof(cl_mem),
+                            &layer->weight_momentum);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 3, sizeof(cl_mem),
+                            &layer->bias_momentum);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 4, sizeof(cl_mem),
+                            &layer->activation);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 5, sizeof(cl_mem),
+                            &layer->input);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 6, sizeof(cl_mem),
+                            &layer->gradient);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 7, sizeof(int),
+                            &layer->input_size);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 8, sizeof(int),
+                            &layer->output_size);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 9, sizeof(float),
+                            &learning_rate);
+      err |= clSetKernelArg(net->backward_softmax_kernel, 10, sizeof(float),
+                            &momentum);
+
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error setting softmax backward kernel args: %d\n",
+                err);
+        break;
+      }
+
+      err = clEnqueueNDRangeKernel(queue, net->backward_softmax_kernel, 1, NULL,
+                                   &global_size, NULL, 0, NULL, NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error enqueueing softmax backward kernel: %d\n", err);
+        break;
+      }
     } else {
-      kernel = net->backward_relu_kernel;
+      // HIDDEN LAYERS (ReLU) --------------------------------------------
       Layer_t *next_layer = &net->layers[i + 1];
 
-      // Set kernel arguments for ReLU backward pass
-      clSetKernelArg(kernel, 0, sizeof(cl_mem), &layer->weights);
-      clSetKernelArg(kernel, 1, sizeof(cl_mem), &layer->biases);
-      clSetKernelArg(kernel, 2, sizeof(cl_mem), &layer->weight_momentum);
-      clSetKernelArg(kernel, 3, sizeof(cl_mem), &layer->bias_momentum);
-      clSetKernelArg(kernel, 4, sizeof(cl_mem), &next_layer->gradient);
-      clSetKernelArg(kernel, 5, sizeof(cl_mem), &layer->activation);
-      clSetKernelArg(kernel, 6, sizeof(cl_mem), &layer->input);
-      clSetKernelArg(kernel, 7, sizeof(int), &layer->input_size);
-      clSetKernelArg(kernel, 8, sizeof(int), &layer->output_size);
-      clSetKernelArg(kernel, 9, sizeof(float), &learning_rate);
-      clSetKernelArg(kernel, 10, sizeof(float), &momentum);
-    }
+      // 1. Compute gradients for this layer (dL/dh = W_next^T * dL/dz_next)
+      err = clSetKernelArg(net->weight_gradient_kernel, 0, sizeof(cl_mem),
+                           &next_layer->weights);
+      err |= clSetKernelArg(net->weight_gradient_kernel, 1, sizeof(cl_mem),
+                            &next_layer->gradient);
+      err |= clSetKernelArg(net->weight_gradient_kernel, 2, sizeof(cl_mem),
+                            &layer->gradient);
+      err |= clSetKernelArg(net->weight_gradient_kernel, 3, sizeof(int),
+                            &layer->output_size);
+      err |= clSetKernelArg(net->weight_gradient_kernel, 4, sizeof(int),
+                            &next_layer->output_size);
 
-    // Execute the backward kernel for the current layer
-    size_t global_size = layer->output_size;
-    clEnqueueNDRangeKernel(queue, kernel, 1, NULL, &global_size, NULL, 0, NULL,
-                           NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error setting weight grad kernel args: %d\n", err);
+        break;
+      }
 
-    // Compute gradient for previous layer if not the first layer
-    if (i > 0) {
-      Layer_t *prev_layer = &net->layers[i - 1];
-      Layer_t *current_layer = &net->layers[i];
+      err = clEnqueueNDRangeKernel(queue, net->weight_gradient_kernel, 1, NULL,
+                                   &global_size, NULL, 0, NULL, NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error enqueueing weight grad kernel: %d\n", err);
+        break;
+      }
 
-      cl_kernel weight_grad_kernel = net->weight_gradient_kernel;
-      clSetKernelArg(weight_grad_kernel, 0, sizeof(cl_mem),
-                     &current_layer->weights);
-      clSetKernelArg(weight_grad_kernel, 1, sizeof(cl_mem),
-                     &current_layer->gradient);
-      clSetKernelArg(weight_grad_kernel, 2, sizeof(cl_mem),
-                     &prev_layer->gradient);
-      clSetKernelArg(weight_grad_kernel, 3, sizeof(int),
-                     &prev_layer->output_size); // Input size of current layer
-      clSetKernelArg(
-          weight_grad_kernel, 4, sizeof(int),
-          &current_layer->output_size); // Output size of current layer
+      // 2. Update hidden layer weights and biases
+      err = clSetKernelArg(net->backward_relu_kernel, 0, sizeof(cl_mem),
+                           &layer->weights);
+      err |= clSetKernelArg(net->backward_relu_kernel, 1, sizeof(cl_mem),
+                            &layer->biases);
+      err |= clSetKernelArg(net->backward_relu_kernel, 2, sizeof(cl_mem),
+                            &layer->weight_momentum);
+      err |= clSetKernelArg(net->backward_relu_kernel, 3, sizeof(cl_mem),
+                            &layer->bias_momentum);
+      err |= clSetKernelArg(net->backward_relu_kernel, 4, sizeof(cl_mem),
+                            &next_layer->gradient);
+      err |= clSetKernelArg(net->backward_relu_kernel, 5, sizeof(cl_mem),
+                            &layer->activation);
+      err |= clSetKernelArg(net->backward_relu_kernel, 6, sizeof(cl_mem),
+                            &layer->input);
+      err |= clSetKernelArg(net->backward_relu_kernel, 7, sizeof(int),
+                            &layer->input_size);
+      err |= clSetKernelArg(net->backward_relu_kernel, 8, sizeof(int),
+                            &layer->output_size);
+      err |= clSetKernelArg(net->backward_relu_kernel, 9, sizeof(float),
+                            &learning_rate);
+      err |= clSetKernelArg(net->backward_relu_kernel, 10, sizeof(float),
+                            &momentum);
 
-      size_t prev_global_size = prev_layer->output_size;
-      clEnqueueNDRangeKernel(queue, weight_grad_kernel, 1, NULL,
-                             &prev_global_size, NULL, 0, NULL, NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error setting ReLU backward kernel args: %d\n", err);
+        break;
+      }
+
+      err = clEnqueueNDRangeKernel(queue, net->backward_relu_kernel, 1, NULL,
+                                   &global_size, NULL, 0, NULL, NULL);
+      if (err != CL_SUCCESS) {
+        fprintf(stderr, "Error enqueueing ReLU backward kernel: %d\n", err);
+        break;
+      }
     }
   }
-  clFinish(queue); // Ensure all operations are complete
+
+  // Cleanup
+  clReleaseMemObject(target_buffer);
+  clFinish(queue); // Ensure all operations complete
 }
 
 void train(NeuralNetwork_t *net, cl_command_queue queue, const float *input,

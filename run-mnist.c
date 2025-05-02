@@ -192,7 +192,7 @@ int main() {
   float learning_rate = 0.0001f;
   float momentum = 0.5f;
   int batch_size = 64; // process 100 images at a time.
-  int num_epochs = 5;  // Number of times to go through the entire dataset
+  int num_epochs = 1;  // Number of times to go through the entire dataset
 
   // Training loop
   for (int epoch = 0; epoch < num_epochs; epoch++) {

@@ -81,6 +81,8 @@ __kernel void backward_With_Softmax(
     // calc gradient using 1 hot label
     float grad = layer_Activation[i] - target_Output[i];
 
+    // printf("output grad, %f\n", grad);
+
     // Update bias
     bias_Momentum[i] = momentum * bias_Momentum[i] + learning_Rate * grad;
     layer_Bias[i] -= bias_Momentum[i];
@@ -97,9 +99,9 @@ __kernel void backward_With_Softmax(
 }
 
 /*
- * calculates gradient, ReLU derivation
- * updates bias
- * updates weight
+  calculates gradient, ReLU derivation
+  updates bias
+  updates weight
  */
 __kernel void backward_With_Relu(
     __global float *layer_Weight, __global float *layer_Bias,
@@ -107,7 +109,10 @@ __kernel void backward_With_Relu(
     __global const float *next_Gradient, __global const float *layer_Activation,
     __global const float *layer_Input, const int input_Size,
     const int output_Size, const float learning_Rate, const float momentum) {
+
   const int i = get_global_id(0);
+
+  // printf("Next_Gradient[%d], %f\n", i, next_Gradient[i]);
 
   if (i < output_Size) {
     // calc gradient using relu derivative
@@ -129,12 +134,12 @@ __kernel void backward_With_Relu(
 }
 
 /*
- * Calculates the gradient to be passed to the previous layer.
- * This is d(loss) / d(input of current layer), which is equivalent to
- * d(loss) / d(output of previous layer).
- *
- * previous_Gradient[i] = sum(current_Weights[i * current_OutputSize + j] *
- * next_Gradient[j]) for all j
+  Calculates the gradient to be passed to the previous layer.
+  This is d(loss) / d(input of current layer), which is equivalent to
+  d(loss) / d(output of previous layer).
+
+  previous_Gradient[i] = sum(current_Weights[i * current_OutputSize + j] *
+  next_Gradient[j]) for all j
  */
 __kernel void weight_gradient(
     __global const float *current_Weights, __global const float *next_Gradient,
@@ -152,5 +157,15 @@ __kernel void weight_gradient(
           current_Weights[i * current_OutputSize + j] * next_Gradient[j];
     }
     previous_Gradient[i] = grad_sum;
+  }
+}
+
+__kernel void compute_output_gradient(__global const float *activation,
+                                      __global float *gradient,
+                                      __global const float *target,
+                                      const int size) {
+  int i = get_global_id(0);
+  if (i < size) {
+    gradient[i] = activation[i] - target[i];
   }
 }
