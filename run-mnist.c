@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define IMAGE_SIZE 28
 #define EPSILON 0.0001f
@@ -173,6 +174,12 @@ int main() {
   one_hot_encode_labels(test_data.labels, test_data.nImages, num_classes,
                         test_labels_one_hot);
 
+  srand(time(NULL)); // Seed the random number generator
+  int random_index = rand() % training_data.nImages;
+  printf("Displaying a random training image (index %d):\n", random_index);
+  display_image(&training_data.images[random_index * image_size]);
+  printf("Label: %d\n", training_data.labels[random_index]);
+
   // Define network architecture: 784 -> 512 -> 256 -> 10
   int layer_sizes[] = {784, 512, 256, 10};
   int num_layers = sizeof(layer_sizes) / sizeof(int);
@@ -189,10 +196,10 @@ int main() {
 
   // Set the learning rate and momentum.  These are common values, but you
   // should experiment with them.
-  float learning_rate = 0.0001f;
+  float learning_rate = 0.001f;
   float momentum = 0.5f;
-  int batch_size = 64; // process 100 images at a time.
-  int num_epochs = 1;  // Number of times to go through the entire dataset
+  int batch_size = 64; 
+  int num_epochs = 1;  
 
   // Training loop
   for (int epoch = 0; epoch < num_epochs; epoch++) {
