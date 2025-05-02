@@ -41,3 +41,13 @@ NeuralNetwork_t create_NeuralNetwork(cl_context context, int *layer_sizes,
                                      int num_layers);
 
 void free_NeuralNetwork(NeuralNetwork_t *net);
+
+void forward(NeuralNetwork_t *net, cl_command_queue queue, const float *input,
+             int input_size, float *output, int output_size);
+
+void backward(NeuralNetwork_t *net, cl_command_queue queue, const float *target,
+              int target_size, float learning_rate, float momentum);
+
+void train(NeuralNetwork_t *net, cl_command_queue queue, const float *input,
+           int input_size, const float *target, int target_size,
+           float learning_rate, float momentum);

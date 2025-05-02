@@ -33,34 +33,38 @@ __kernel void forward_With_Softmax(__global const float *layer_Weight,
                                    const int input_dim, const int output_dim) {
   const int i = get_global_id(0);
 
-  // matmult section
-
+  // Compute weighted sum
   float sum = layer_Bias[i];
   for (int j = 0; j < input_dim; j++) {
     sum += layer_Input[j] * layer_Weight[j * output_dim + i];
   }
+  layer_activation[i] = sum;
 
-  // Softmax section
+  // Wait for all threads to finish computing sums
+  barrier(CLK_GLOBAL_MEM_FENCE);
 
-  float max_val = -FLT_MAX;
-  for (int j = 0; j < output_dim; j++) {
-    max_val = max(max_val, sum);
-  }
-
-  float exp_val = exp(sum - max_val);
-
-  float exp_sum = 0.0f;
-  for (int j = 0; j < output_dim; j++) {
-    float temp_sum = layer_Bias[j];
-    for (int k = 0; k < input_dim; k++) {
-      temp_sum += layer_Input[k] * layer_Weight[k * output_dim + j];
+  // Only thread 0 computes the softmax denominator
+  if (i == 0) {
+    float max_val = layer_activation[0];
+    for (int j = 1; j < output_dim; j++) {
+      if (layer_activation[j] > max_val) {
+        max_val = layer_activation[j];
+      }
     }
-    exp_sum += exp(temp_sum - max_val);
+
+    float exp_sum = 0.0f;
+    for (int j = 0; j < output_dim; j++) {
+      float exp_val = exp(layer_activation[j] - max_val);
+      layer_activation[j] = exp_val;
+      exp_sum += exp_val;
+    }
+
+    // Normalize
+    for (int j = 0; j < output_dim; j++) {
+      layer_activation[j] /= exp_sum;
+    }
   }
-
-  layer_activation[i] = exp_val / exp_sum;
 }
-
 /*
   calculates gradient, activation - one hot target
   updates bias
