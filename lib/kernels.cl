@@ -1,15 +1,13 @@
-
 // good practice to use const for read only variables
 
 /*
-  a.w + b -> Relu = Activation
-*/
+ * a.w + b -> Relu = Activation
+ */
 __kernel void forward_With_Relu(__global const float *layer_Weight,
                                 __global const float *layer_Bias,
                                 __global float *layer_activation,
                                 __global const float *layer_Input,
                                 const int input_dim, const int output_dim) {
-
   const int i = get_global_id(0);
 
   float sum = layer_Bias[i];
@@ -21,11 +19,11 @@ __kernel void forward_With_Relu(__global const float *layer_Weight,
 }
 
 /*
-  a.w + b -> softmax = Activation
-
-  TODO improve the softmax part, currently placed here just to prevent
-  unnecessary copy backs
-*/
+ * a.w + b -> softmax = Activation
+ *
+ * TODO improve the softmax part, currently placed here just to prevent
+ * unnecessary copy backs
+ */
 __kernel void forward_With_Softmax(__global const float *layer_Weight,
                                    __global const float *layer_Bias,
                                    __global float *layer_activation,
@@ -65,18 +63,18 @@ __kernel void forward_With_Softmax(__global const float *layer_Weight,
     }
   }
 }
+
 /*
-  calculates gradient, activation - one hot target
-  updates bias
-  updates weight
-*/
+ * calculates gradient, activation - one hot target
+ * updates bias
+ * updates weight
+ */
 __kernel void backward_With_Softmax(
     __global float *layer_Weight, __global float *layer_Bias,
     __global float *weight_Momentum, __global float *bias_Momentum,
     __global const float *layer_Activation, __global const float *layer_Input,
     __global const float *target_Output, const int input_Size,
     const int output_Size, const float learning_Rate, const float momentum) {
-
   const int i = get_global_id(0);
 
   if (i < output_Size) {
@@ -99,17 +97,16 @@ __kernel void backward_With_Softmax(
 }
 
 /*
-  calculates gradient, ReLU derivation
-  updates bias
-  updates weight
-*/
+ * calculates gradient, ReLU derivation
+ * updates bias
+ * updates weight
+ */
 __kernel void backward_With_Relu(
     __global float *layer_Weight, __global float *layer_Bias,
     __global float *weight_Momentum, __global float *bias_Momentum,
     __global const float *next_Gradient, __global const float *layer_Activation,
     __global const float *layer_Input, const int input_Size,
     const int output_Size, const float learning_Rate, const float momentum) {
-
   const int i = get_global_id(0);
 
   if (i < output_Size) {
@@ -128,5 +125,32 @@ __kernel void backward_With_Relu(
           momentum * weight_Momentum[idx] + learning_Rate * w_grad;
       layer_Weight[idx] -= weight_Momentum[idx];
     }
+  }
+}
+
+/*
+ * Calculates the gradient to be passed to the previous layer.
+ * This is d(loss) / d(input of current layer), which is equivalent to
+ * d(loss) / d(output of previous layer).
+ *
+ * previous_Gradient[i] = sum(current_Weights[i * current_OutputSize + j] *
+ * next_Gradient[j]) for all j
+ */
+__kernel void weight_gradient(
+    __global const float *current_Weights, __global const float *next_Gradient,
+    __global float *previous_Gradient,
+    const int current_InputSize, // Output size of the previous layer
+    const int current_OutputSize // Output size of the current layer
+) {
+  const int i = get_global_id(0); // Neuron index in the previous layer
+
+  if (i < current_InputSize) {
+    float grad_sum = 0.0f;
+    for (int j = 0; j < current_OutputSize;
+         j++) { // Iterate over neurons in the current layer
+      grad_sum +=
+          current_Weights[i * current_OutputSize + j] * next_Gradient[j];
+    }
+    previous_Gradient[i] = grad_sum;
   }
 }

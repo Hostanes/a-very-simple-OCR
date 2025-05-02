@@ -1,4 +1,3 @@
-
 #include "../lib/nnlib-ocl.h"
 #include <math.h>
 #include <stdio.h>
@@ -6,79 +5,6 @@
 #include <string.h>
 
 #define EPSILON 0.0001f
-
-// Function to read kernel source from file
-char *load_kernel_source(const char *filename) {
-  FILE *fp = fopen(filename, "r");
-  if (!fp) {
-    fprintf(stderr, "Error: Failed to open kernel file %s\n", filename);
-    return NULL;
-  }
-
-  // Get file size
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  rewind(fp);
-
-  // Allocate buffer
-  char *source = (char *)malloc(size + 1);
-  if (!source) {
-    fprintf(stderr, "Error: Failed to allocate memory for kernel source\n");
-    fclose(fp);
-    return NULL;
-  }
-
-  // Read file content
-  size_t read_size = fread(source, 1, size, fp);
-  if (read_size != size) {
-    fprintf(stderr, "Error: Failed to read kernel source\n");
-    free(source);
-    fclose(fp);
-    return NULL;
-  }
-
-  source[size] = '\0'; // Null-terminate
-  fclose(fp);
-  return source;
-}
-
-// Modified program initialization code
-cl_program create_and_build_program(cl_context context, cl_device_id device) {
-  const char *kernel_filename = "lib/kernels.cl";
-  char *kernel_source = load_kernel_source(kernel_filename);
-  if (!kernel_source) {
-    return NULL;
-  }
-
-  cl_int err;
-  cl_program program = clCreateProgramWithSource(
-      context, 1, (const char **)&kernel_source, NULL, &err);
-  if (err != CL_SUCCESS) {
-    fprintf(stderr, "Error: Failed to create program from source: %d\n", err);
-    free(kernel_source);
-    return NULL;
-  }
-
-  err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-  if (err != CL_SUCCESS) {
-    // Get build log
-    size_t log_size;
-    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL,
-                          &log_size);
-    char *log = (char *)malloc(log_size);
-    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log,
-                          NULL);
-
-    fprintf(stderr, "Error: Failed to build program:\n%s\n", log);
-    free(log);
-    free(kernel_source);
-    clReleaseProgram(program);
-    return NULL;
-  }
-
-  free(kernel_source);
-  return program;
-}
 
 // Helper functions
 int float_equal(float a, float b) { return fabs(a - b) < EPSILON; }
@@ -121,32 +47,43 @@ int test_backward_pass() {
   cl_device_id device;
   cl_context context;
   cl_command_queue queue;
+  cl_int err;
 
-  clGetPlatformIDs(1, &platform, NULL);
-  clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-  context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
-  queue = clCreateCommandQueue(context, device, 0, NULL);
+  err = clGetPlatformIDs(1, &platform, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to find OpenCL platform.\n");
+    return 1;
+  }
+
+  err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to find a GPU device.\n");
+    return 1;
+  }
+
+  context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to create OpenCL context.\n");
+    return 1;
+  }
+
+  queue = clCreateCommandQueue(context, device, 0, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to create command queue.\n");
+    clReleaseContext(context);
+    return 1;
+  }
 
   // Create network (2-2-2 architecture)
   int layer_sizes[] = {2, 2, 2};
-  NeuralNetwork_t net = create_NeuralNetwork(context, layer_sizes, 3);
-
-  // Load and build program
-  char *kernel_source = load_kernel_source("lib/kernels.cl");
-  cl_program program = clCreateProgramWithSource(
-      context, 1, (const char **)&kernel_source, NULL, NULL);
-  clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-
-  // Create kernels
-  net.forward_relu_kernel = clCreateKernel(program, "forward_With_Relu", NULL);
-  net.forward_softmax_kernel =
-      clCreateKernel(program, "forward_With_Softmax", NULL);
-  net.backward_relu_kernel =
-      clCreateKernel(program, "backward_With_Relu", NULL);
-  net.backward_softmax_kernel =
-      clCreateKernel(program, "backward_With_Softmax", NULL);
-  net.queue = queue;
-  net.program = program;
+  NeuralNetwork_t net =
+      create_NeuralNetwork(context, device, queue, layer_sizes, 3);
+  if (net.program == NULL) {
+    fprintf(stderr, "Error: Failed to create neural network.\n");
+    clReleaseCommandQueue(queue);
+    clReleaseContext(context);
+    return 1;
+  }
 
   // Initialize with test values
   init_network_with_test_values(&net, queue);
@@ -177,15 +114,33 @@ int test_backward_pass() {
                       2 * sizeof(float), updated_biases2, 0, NULL, NULL);
 
   // Expected values (manually calculated)
-  float expected_weights1[] = {0.1f, 0.2f, 0.3f,
-                               0.4f};      // No change (hidden layer)
-  float expected_biases1[] = {0.1f, 0.1f}; // No change (hidden layer)
+  //  Forward Pass:
+  //    input = [1.0, 0.5]
+  //    h1_out = relu(1.0*0.1 + 0.5*0.3 + 0.1, 1.0*0.2 + 0.5*0.4 + 0.1) = [0.25,
+  //    0.4] output_sums = [0.25*0.5 + 0.4*0.7 + 0.2, 0.25*0.6 + 0.4*0.8 + 0.2]
+  //    = [0.505, 0.67] output = softmax([0.505, 0.67]) = [0.46, 0.54]
+  //    (approximately)
 
-  // Output layer should have updates (softmax backward)
-  // These are approximate expected values - adjust based on your exact
-  // calculations
-  float expected_weights2[] = {0.5f, 0.6f, 0.7f, 0.8f};
-  float expected_biases2[] = {0.2f, 0.2f};
+  // Backward Pass:
+  // dL/dOut = output - target = [0.46, 0.54] - [0, 1] = [0.46, -0.46]
+  // For output layer (Softmax):
+  //    dL/dW2 =  [[0.25],[0.4]] * [0.46, -0.46] = [[0.115, -0.115],[0.184,
+  //    -0.184]] dL/dB2 = [0.46, -0.46]
+  // For hidden layer (Relu):
+  //  back_grad = dL/dOut * W2.T = [0.46, -0.46] * [[0.5, 0.6],[0.7,0.8]] =
+  //  [-0.092, -0.046] relu_grad = back_grad * relu_derivative = [-0.092,
+  //  -0.046] * [1, 1] = [-0.092, -0.046] dL/dW1 = [[1.0],[0.5]] * [-0.092,
+  //  -0.046] = [[-0.092, -0.046],[-0.046, -0.023]] dL/dB1 = [-0.092, -0.046]
+
+  float expected_weights2[] = {0.5f - learning_rate * 0.25f * 0.46f,  // w11
+                               0.6f - learning_rate * 0.25f * -0.46f, // w12
+                               0.7f - learning_rate * 0.4f * 0.46f,   // w21
+                               0.8f - learning_rate * 0.4f * -0.46f}; // w22
+  float expected_biases2[] = {0.2f - learning_rate * 0.46f,
+                              0.2f - learning_rate * -0.46f};
+
+  float expected_weights1[] = {0.1f, 0.2f, 0.3f, 0.4f};
+  float expected_biases1[] = {0.1f, 0.1f};
 
   // Verify results
   int passed = 1;
@@ -236,8 +191,6 @@ int test_backward_pass() {
 
   // Cleanup
   free_NeuralNetwork(&net);
-  free(kernel_source);
-  clReleaseProgram(program);
   clReleaseCommandQueue(queue);
   clReleaseContext(context);
 

@@ -1,4 +1,3 @@
-
 #include "../lib/nnlib-ocl.h"
 #include <math.h>
 #include <stdio.h>
@@ -9,79 +8,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// Function to read kernel source from file
-char *load_kernel_source(const char *filename) {
-  FILE *fp = fopen(filename, "r");
-  if (!fp) {
-    fprintf(stderr, "Error: Failed to open kernel file %s\n", filename);
-    return NULL;
-  }
-
-  // Get file size
-  fseek(fp, 0, SEEK_END);
-  long size = ftell(fp);
-  rewind(fp);
-
-  // Allocate buffer
-  char *source = (char *)malloc(size + 1);
-  if (!source) {
-    fprintf(stderr, "Error: Failed to allocate memory for kernel source\n");
-    fclose(fp);
-    return NULL;
-  }
-
-  // Read file content
-  size_t read_size = fread(source, 1, size, fp);
-  if (read_size != size) {
-    fprintf(stderr, "Error: Failed to read kernel source\n");
-    free(source);
-    fclose(fp);
-    return NULL;
-  }
-
-  source[size] = '\0'; // Null-terminate
-  fclose(fp);
-  return source;
-}
-
-// Modified program initialization code
-cl_program create_and_build_program(cl_context context, cl_device_id device) {
-  const char *kernel_filename = "lib/kernels.cl";
-  char *kernel_source = load_kernel_source(kernel_filename);
-  if (!kernel_source) {
-    return NULL;
-  }
-
-  cl_int err;
-  cl_program program = clCreateProgramWithSource(
-      context, 1, (const char **)&kernel_source, NULL, &err);
-  if (err != CL_SUCCESS) {
-    fprintf(stderr, "Error: Failed to create program from source: %d\n", err);
-    free(kernel_source);
-    return NULL;
-  }
-
-  err = clBuildProgram(program, 1, &device, NULL, NULL, NULL);
-  if (err != CL_SUCCESS) {
-    // Get build log
-    size_t log_size;
-    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, 0, NULL,
-                          &log_size);
-    char *log = (char *)malloc(log_size);
-    clGetProgramBuildInfo(program, device, CL_PROGRAM_BUILD_LOG, log_size, log,
-                          NULL);
-
-    fprintf(stderr, "Error: Failed to build program:\n%s\n", log);
-    free(log);
-    free(kernel_source);
-    clReleaseProgram(program);
-    return NULL;
-  }
-
-  free(kernel_source);
-  return program;
-}
 
 // Helper function to compare floats
 int float_equal(float a, float b) { return fabs(a - b) < EPSILON; }
@@ -103,38 +29,46 @@ int main() {
   cl_device_id device;
   cl_context context;
   cl_command_queue queue;
+  cl_int err;
 
-  clGetPlatformIDs(1, &platform, NULL);
-  clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-  context = clCreateContext(NULL, 1, &device, NULL, NULL, NULL);
-  queue = clCreateCommandQueue(context, device, 0, NULL);
+  err = clGetPlatformIDs(1, &platform, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to find OpenCL platform.\n");
+    return 1;
+  }
+
+  err = clGetDeviceIDs(platform, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to find a GPU device.\n");
+    return 1;
+  }
+
+  context = clCreateContext(NULL, 1, &device, NULL, NULL, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to create OpenCL context.\n");
+    return 1;
+  }
+
+  queue = clCreateCommandQueue(context, device, 0, &err);
+  if (err != CL_SUCCESS) {
+    fprintf(stderr, "Error: Failed to create command queue.\n");
+    clReleaseContext(context);
+    return 1;
+  }
 
   // Define network architecture: input(3) -> hidden(3) -> output(3)
   int layer_sizes[] = {3, 3, 3};
   int num_layers = sizeof(layer_sizes) / sizeof(int);
 
   // Create network
-  NeuralNetwork_t net = create_NeuralNetwork(context, layer_sizes, num_layers);
-
-  // Load and build OpenCL program
-  cl_program program = create_and_build_program(context, device);
-  if (!program) {
-    // Cleanup and exit if program creation fails
+  NeuralNetwork_t net =
+      create_NeuralNetwork(context, device, queue, layer_sizes, num_layers);
+  if (net.program == NULL) {
+    fprintf(stderr, "Error: Failed to create neural network.\n");
     clReleaseCommandQueue(queue);
     clReleaseContext(context);
     return 1;
   }
-
-  // Assign to network structure
-  net.program = program;
-
-  // Create kernels
-  net.forward_relu_kernel = clCreateKernel(program, "forward_With_Relu", NULL);
-  net.forward_softmax_kernel =
-      clCreateKernel(program, "forward_With_Softmax", NULL);
-  net.queue = queue;
-  net.program = program;
-
   // Manually set weights and biases for testing
   // Hidden layer weights (3x3 matrix)
   float hidden_weights[] = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f,
@@ -236,7 +170,6 @@ int main() {
 
   // Cleanup
   free_NeuralNetwork(&net);
-  clReleaseProgram(program);
   clReleaseCommandQueue(queue);
   clReleaseContext(context);
 
