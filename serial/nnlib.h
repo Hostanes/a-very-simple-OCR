@@ -1,17 +1,20 @@
 #ifndef NNLIB_H
 #define NNLIB_H
 
-#include <CL/cl.h>
 #include <math.h>
+#include <omp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAGIC_NUMBER 143
+// neural network magic number, used at the top of the model file
+#define MAGIC_NUMBER 143 // 0x8f
+
 #define FILE_VERSION 1
 #define MAX_ACTIVATION_NAME_LEN 32
 
+// Add activation function type enum
 typedef enum {
   ACT_RELU,
   ACT_SIGMOID,
@@ -28,17 +31,8 @@ typedef struct {
   float *biases;
   float *weight_momentum;
   float *bias_momentum;
-  float *output;
-  float *input;
-
-  // Device buffers
-  cl_mem weights_buf;
-  cl_mem biases_buf;
-  cl_mem weight_momentum_buf;
-  cl_mem bias_momentum_buf;
-  cl_mem output_buf;
-  cl_mem input_buf;
-
+  float *output; // after activation
+  float *input;  // before activation
   int input_size;
   int output_size;
   ActivationFunc activation;
@@ -50,42 +44,41 @@ typedef struct {
   int num_layers;
   float learning_rate;
   float momentum;
-  int version;
-  cl_context context; // Store OpenCL context
+  int version; // differentiate between different model files
 } NeuralNetwork_t;
 
-// Initialization
+// NN INIT, FREE FUNCS
 NeuralNetwork_t *create_network(int *layer_sizes, int num_layers,
                                 ActivationFunc *activations,
                                 ActivationDerivative *derivatives,
-                                float learning_rate, float momentum,
-                                cl_context context);
+                                float learning_rate, float momentum);
 void free_network(NeuralNetwork_t *net);
 
-// Device memory management
-void upload_network_to_device(NeuralNetwork_t *net, cl_command_queue queue);
-void download_network_from_device(NeuralNetwork_t *net, cl_command_queue queue);
+// PROP FUNCS
+float *forward_pass(NeuralNetwork_t *net, float *input);
+void backward_pass(NeuralNetwork_t *net, float *input, float *target);
 
-// Forward/backward passes
-float *forward_pass(NeuralNetwork_t *net, float *input, cl_command_queue queue,
-                    cl_program program, int read_output);
-void backward_pass(NeuralNetwork_t *net, float *target, cl_command_queue queue,
-                   cl_program program);
-
-// Training interface
-void train(NeuralNetwork_t *net, float *input, float *target,
-           cl_command_queue queue, cl_program program);
-int predict(NeuralNetwork_t *net, float *input, cl_command_queue queue,
-            cl_program program);
-
-// Utility functions
+// TRAINING FUNCS
+void train(NeuralNetwork_t *net, float *input, float *target);
+int predict(NeuralNetwork_t *net, float *input);
 float calculate_loss(NeuralNetwork_t *net, float *output, float *target);
+
+// alternative function to train, used for parallelized gradients, each thread
+// has private gradients
 void compute_gradients(NeuralNetwork_t *net, float *input, float *target,
                        float **gradients, float **bias_gradients);
 void apply_updates(NeuralNetwork_t *net, float **gradients,
                    float **bias_gradients, int batch_size);
 
-// Activation functions
+// UTIL FUNCS
+void initialize_layer(Layer_t *layer, int input_size, int output_size,
+                      ActivationFunc activation,
+                      ActivationDerivative derivative);
+void randomize_weights(float *weights, int size, float scale);
+
+// ACTIVATION FUNCS
+float sigmoid(float x);
+float sigmoid_derivative(float x);
 float relu(float x);
 float relu_derivative(float x);
 float linear(float x);
@@ -94,8 +87,9 @@ void softmax(float *array, int size);
 void softmax_derivative(float *output, float *gradient, int size);
 float softmax_placeholder(float x);
 
-// Model persistence
+// writing mode to file
+
 int save_Network(NeuralNetwork_t *network, const char *filename);
-NeuralNetwork_t *load_Network(const char *filename, cl_context context);
+NeuralNetwork_t *load_Network(const char *filename);
 
 #endif // NNLIB_H

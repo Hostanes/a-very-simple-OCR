@@ -1,4 +1,4 @@
-#include "lib/nnlib.h"
+#include "serial/nnlib.h"
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>

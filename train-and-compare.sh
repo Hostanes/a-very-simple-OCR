@@ -5,7 +5,7 @@ echo "compiling the OpenMP version"
 
 
 echo "compiling the OpenCL version"
-./compile-and-run-ocl.sh mnist-train-ocl.c
+./compile-and-run-ocl.sh ocl/mnist-train-ocl.c
 
 echo "compiling the serial version"
 ./compile-and-run.sh mnist-train.c

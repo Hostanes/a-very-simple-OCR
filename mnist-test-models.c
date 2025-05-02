@@ -1,5 +1,5 @@
 
-#include "lib/nnlib.h"
+#include "serial/nnlib.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -29,7 +29,7 @@ int main() {
   // Load all three models
   NeuralNetwork_t *serial_model = load_Network("serial.nn");
   NeuralNetwork_t *omp_model = load_Network("omp.nn");
-  NeuralNetwork_t *ocl_model = load_Network("ocl.nn");
+  NeuralNetwork_t *ocl_model = load_Network("ocl2.nn");
 
   if (!serial_model || !omp_model || !ocl_model) {
     fprintf(stderr, "Failed to load one or more models\n");

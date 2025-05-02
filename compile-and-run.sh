@@ -13,7 +13,7 @@ base_name="${input_file%.*}"
 output_file="bin/${base_name}.o"
 
 echo "Compiling $input_file to $output_file..."
-gcc "$input_file" lib/nnlib.c lib/matrix-math.c -O3 -march=native -ffast-math -lm -o "$output_file" -g -fopenmp
+gcc "$input_file" serial/nnlib.c  -O3 -march=native -ffast-math -lm -o "$output_file" -g -fopenmp
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful. Running program..."
