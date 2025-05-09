@@ -1,3 +1,4 @@
 ```
-  A refactored implementation of the opencl code, designed to resuse buffer effienctly  
+  A dense neural network library attempting to parallelize
+  the operations on the GPU using OpenCL in a memory efficient manner
 ```
