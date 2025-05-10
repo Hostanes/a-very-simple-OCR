@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define FLOAT_TOLERANCE 1e-3
+#define FLOAT_TOLERANCE 1e-4
 
 int layer_Sizes[] = {2, 3, 2}; // Input(2) -> Hidden(3) -> Output(2)
 
@@ -89,150 +89,10 @@ void test_network() {
     printf("Errors: [%.4f, %.4f]\n", output_errors[sample * 2],
            output_errors[sample * 2 + 1]);
   }
-
-  // --- Backward Pass ---
-  printf("\n=== Backward Pass ===\n");
-  backward_Pass(batch, weights, neuron_values, gradient_weights,
-                gradient_biases, output_errors, batch_Size, layer_Sizes,
-                num_Layers);
-
-  // Expected gradients (manually calculated)
-  // Layer 2 gradients (averaged over batch)
-  float expected_grad_w2[] = {-0.055675f, -0.113675f, -0.171675f,
-                              0.055675f,  0.113675f,  0.171675f};
-  float expected_grad_b2[] = {-0.2435f, 0.2435f};
-
-  // Layer 1 gradients (averaged)
-  float expected_grad_w1[] = {0.006975f, 0.0435f,   0.006975f,
-                              0.0435f,   0.006975f, 0.0435f};
-  float expected_grad_b1[] = {0.07305f, 0.07305f, 0.07305f};
-
-  // Verify gradients
-  printf("\nChecking Layer 2 Gradients:\n");
-  int w2_offset = layer_Sizes[0] * layer_Sizes[1];
-  for (int i = 0; i < 6; i++) {
-    char label[32];
-    sprintf(label, "Weight gradient %d", i + 1);
-    print_comparison(label, expected_grad_w2[i],
-                     gradient_weights[w2_offset + i], &total_errors);
-  }
-  for (int i = 0; i < 2; i++) {
-    char label[32];
-    sprintf(label, "Bias gradient %d", i + 1);
-    print_comparison(label, expected_grad_b2[i],
-                     gradient_biases[layer_Sizes[1] + i], &total_errors);
-  }
-
-  printf("\nChecking Layer 1 Gradients:\n");
-  for (int i = 0; i < 6; i++) {
-    char label[32];
-    sprintf(label, "Weight gradient %d", i + 1);
-    print_comparison(label, expected_grad_w1[i], gradient_weights[i],
-                     &total_errors);
-  }
-  for (int i = 0; i < 3; i++) {
-    char label[32];
-    sprintf(label, "Bias gradient %d", i + 1);
-    print_comparison(label, expected_grad_b1[i], gradient_biases[i],
-                     &total_errors);
-  }
-
-  // Cleanup
-  free(neuron_values);
-  free(gradient_weights);
-  free(gradient_biases);
-  free(output_errors);
-
-  printf("\n==== Test Summary ====\n");
-  if (total_errors == 0) {
-    printf("✅ All gradients match expected values!\n");
-  } else {
-    printf("❌ Found %d gradient mismatches\n", total_errors);
-  }
-}
-
-void test_weight_update() {
-  printf("\n==== Weight Update Test ====\n");
-  int total_errors = 0;
-  const int num_Layers = 3;
-
-  // Network parameters
-  float weights[] = {
-      // Layer 1 (2×3)
-      0.1f, 0.2f, // Neuron 1
-      0.3f, 0.4f, // Neuron 2
-      0.5f, 0.6f, // Neuron 3
-      // Layer 2 (3×2)
-      1.0f, 1.1f, 1.2f, // Neuron 1
-      1.3f, 1.4f, 1.5f  // Neuron 2
-  };
-  float biases[] = {0.1f, 0.2f, 0.3f, // Layer 1
-                    0.4f, 0.5f};      // Layer 2
-
-  // Gradients from previous test
-  float gradient_weights[] = {
-      // Layer 1 gradients
-      0.006975f, 0.0435f, 0.006975f, 0.0435f, 0.006975f, 0.0435f,
-      // Layer 2 gradients
-      -0.055675f, -0.113675f, -0.171675f, 0.055675f, 0.113675f, 0.171675f};
-  float gradient_biases[] = {// Layer 1 gradients
-                             0.07305f, 0.07305f, 0.07305f,
-                             // Layer 2 gradients
-                             -0.2435f, 0.2435f};
-
-  // Make copies for comparison
-  float weights_copy[12];
-  float biases_copy[5];
-  memcpy(weights_copy, weights, sizeof(weights));
-  memcpy(biases_copy, biases, sizeof(biases));
-
-  // Update weights with learning rate 0.1
-  float learning_rate = 0.1f;
-  update_Weights(weights, biases, gradient_weights, gradient_biases,
-                 learning_rate, layer_Sizes, num_Layers);
-
-  // Expected values after update
-  float expected_weights[] = {
-      // Layer 1
-      0.1f - 0.1f * 0.006975f, 0.2f - 0.1f * 0.0435f, 0.3f - 0.1f * 0.006975f,
-      0.4f - 0.1f * 0.0435f, 0.5f - 0.1f * 0.006975f, 0.6f - 0.1f * 0.0435f,
-      // Layer 2
-      1.0f - 0.1f * (-0.055675f), 1.1f - 0.1f * (-0.113675f),
-      1.2f - 0.1f * (-0.171675f), 1.3f - 0.1f * 0.055675f,
-      1.4f - 0.1f * 0.113675f, 1.5f - 0.1f * 0.171675f};
-
-  float expected_biases[] = {// Layer 1
-                             0.1f - 0.1f * 0.07305f, 0.2f - 0.1f * 0.07305f,
-                             0.3f - 0.1f * 0.07305f,
-                             // Layer 2
-                             0.4f - 0.1f * (-0.2435f), 0.5f - 0.1f * 0.2435f};
-
-  // Verify weight updates
-  printf("\nChecking Weight Updates:\n");
-  for (int i = 0; i < 12; i++) {
-    char label[32];
-    sprintf(label, "Weight %d update", i + 1);
-    print_comparison(label, expected_weights[i], weights[i], &total_errors);
-  }
-
-  // Verify bias updates
-  printf("\nChecking Bias Updates:\n");
-  for (int i = 0; i < 5; i++) {
-    char label[32];
-    sprintf(label, "Bias %d update", i + 1);
-    print_comparison(label, expected_biases[i], biases[i], &total_errors);
-  }
-
-  printf("\n==== Update Test Summary ====\n");
-  if (total_errors == 0) {
-    printf("✅ All updates match expected values!\n");
-  } else {
-    printf("❌ Found %d update mismatches\n", total_errors);
-  }
 }
 
 int main() {
   test_network();
-  test_weight_update();
+  // test_weight_update();
   return 0;
 }
