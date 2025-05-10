@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define FLOAT_TOLERANCE 1e-4
+#define FLOAT_TOLERANCE 1e-6
 
 int layer_Sizes[] = {2, 3, 2}; // Input(2) -> Hidden(3) -> Output(2)
 
@@ -19,80 +19,134 @@ void print_comparison(const char *label, float expected, float actual,
   }
 }
 
-void test_network() {
-  printf("==== Neural Network Gradient Test ====\n");
-  int total_errors = 0;
-  const int num_Layers = 3;
-  const int batch_Size = 2;
+void print_layer_values(float *values, int sample, int layer, int input_size,
+                        int output_size, int batch_size) {
+  printf("\nSample %d, Layer %d Values:\n", sample + 1, layer + 1);
+  printf("----------------------------\n");
 
-  // Test data - 2 samples with one-hot targets
-  float batch[] = {0.5f, 1.0f,    // Sample 1
-                   1.5f, 2.0f};   // Sample 2
-  float targets[] = {1.0f, 0.0f,  // Sample 1 target (class 0)
-                     0.0f, 1.0f}; // Sample 2 target (class 1)
-
-  // Network parameters
-  float weights[] = {
-      // Layer 1 (2×3)
-      0.1f, 0.2f, // Neuron 1
-      0.3f, 0.4f, // Neuron 2
-      0.5f, 0.6f, // Neuron 3
-      // Layer 2 (3×2)
-      1.0f, 1.1f, 1.2f, // Neuron 1
-      1.3f, 1.4f, 1.5f  // Neuron 2
-  };
-  float biases[] = {0.1f, 0.2f, 0.3f, // Layer 1
-                    0.4f, 0.5f};      // Layer 2
-
-  // Allocate buffers
-  int neuron_values_size = 0;
-  for (int i = 1; i < num_Layers; i++) {
-    neuron_values_size += layer_Sizes[i] * 2 * batch_Size;
+  int layer_offset = 0;
+  for (int l = 1; l <= layer; l++) {
+    layer_offset += layer_Sizes[l] * 2 * batch_size;
   }
-  float *neuron_values = (float *)calloc(neuron_values_size, sizeof(float));
 
-  int total_weights =
-      layer_Sizes[0] * layer_Sizes[1] + layer_Sizes[1] * layer_Sizes[2];
-  int total_biases = layer_Sizes[1] + layer_Sizes[2];
-  float *gradient_weights = (float *)calloc(total_weights, sizeof(float));
-  float *gradient_biases = (float *)calloc(total_biases, sizeof(float));
-  float *output_errors =
-      (float *)malloc(layer_Sizes[2] * batch_Size * sizeof(float));
+  int sample_offset = sample * (2 * output_size);
 
-  // --- Forward Pass ---
-  printf("\n=== Forward Pass ===\n");
-  forward_Pass(batch, weights, biases, neuron_values, batch_Size, layer_Sizes,
+  printf("%-8s %-8s %-8s\n", "Neuron", "Z", "A");
+  printf("-------- -------- --------\n");
+
+  for (int neuron = 0; neuron < output_size; neuron++) {
+    int idx = layer_offset + sample_offset + (2 * neuron);
+    printf("%-8d %-8.4f %-8.4f\n", neuron + 1,
+           values[idx],    // Z value
+           values[idx + 1] // A value
+    );
+  }
+}
+
+void test_forward_pass() {
+  printf("==== Starting forward_pass unit tests ====\n");
+  int total_errors = 0;
+
+  // Tiny test network: 2 inputs -> 3 hidden -> 2 outputs
+  int num_Layers = 3;
+  int batch_Size = 3; // Testing with 3 samples
+
+  // Test data - 3 samples
+  float batch[] = {
+      0.5f, 1.0f, // Sample 1
+      1.5f, 2.0f, // Sample 2
+      0.8f, 1.2f  // Sample 3
+  };
+
+  // Weights (manually constructed to test specific cases)
+  float weights[] = {
+      // Layer 1 weights (2x3):
+      0.1f, 0.2f, // Neuron 1 weights
+      0.3f, 0.4f, // Neuron 2 weights
+      0.5f, 0.6f, // Neuron 3 weights
+      // Layer 2 weights (3x2):
+      1.0f, 1.1f, 1.2f, // Neuron 1 weights
+      1.3f, 1.4f, 1.5f  // Neuron 2 weights
+  };
+
+  // Biases
+  float biases[] = {
+      0.1f, 0.2f, 0.3f, // Layer 1 biases
+      0.4f, 0.5f        // Layer 2 biases
+  };
+
+  // Allocate neuron values
+  int neuron_Values_Size = 0;
+  for (int i = 1; i < num_Layers; i++) {
+    neuron_Values_Size += layer_Sizes[i] * 2 * batch_Size;
+  }
+  float *neuron_Values = (float *)calloc(neuron_Values_Size, sizeof(float));
+
+  // Run forward pass
+  forward_Pass(batch, weights, biases, neuron_Values, batch_Size, layer_Sizes,
                num_Layers);
 
-  // Calculate output errors (prediction - target)
+  // Print all values for each sample
   for (int sample = 0; sample < batch_Size; sample++) {
-    int output_offset =
-        2 * layer_Sizes[1] * batch_Size + sample * (2 * layer_Sizes[2]);
-    for (int neuron = 0; neuron < layer_Sizes[2]; neuron++) {
-      output_errors[sample * layer_Sizes[2] + neuron] =
-          neuron_values[output_offset + 2 * neuron + 1] -
-          targets[sample * layer_Sizes[2] + neuron];
+    printf("\n═══════════════════════════════\n");
+    printf("      SAMPLE %d DETAILED OUTPUT\n", sample + 1);
+    printf("═══════════════════════════════\n");
+
+    // Print input
+    printf("\nInput Values:\n");
+    for (int i = 0; i < layer_Sizes[0]; i++) {
+      printf("Input %d: %.4f\n", i + 1, batch[sample * layer_Sizes[0] + i]);
+    }
+
+    // Print each layer's values
+    int layer_offset = 0;
+    for (int layer = 1; layer < num_Layers; layer++) {
+      int input_size = layer_Sizes[layer - 1];
+      int output_size = layer_Sizes[layer];
+
+      print_layer_values(neuron_Values, sample, layer - 1, input_size,
+                         output_size, batch_Size);
+
+      // Verification for specific neurons in hidden layer
+      if (layer == 1) {
+        printf("\nLayer 1 Verification:\n");
+        float expected_z;
+        switch (sample) {
+        case 0:
+          expected_z = 0.35f;
+          break; // Sample 1, Neuron 1
+        case 1:
+          expected_z = 2.25f;
+          break; // Sample 2, Neuron 3
+        case 2:
+          expected_z = 1.42f;
+          break; // Sample 3, Neuron 3
+        }
+        int neuron_idx = sample * (2 * output_size) +
+                         (sample == 0 ? 0 : (sample == 1 ? 4 : 4));
+        print_comparison("  Neuron Z value", expected_z,
+                         neuron_Values[layer_offset + neuron_idx],
+                         &total_errors);
+        print_comparison("  Neuron A value", expected_z,
+                         neuron_Values[layer_offset + neuron_idx + 1],
+                         &total_errors);
+      }
+
+      layer_offset += output_size * 2 * batch_Size;
     }
   }
 
-  // Print predictions vs targets
-  for (int sample = 0; sample < batch_Size; sample++) {
-    printf("\nSample %d:\n", sample + 1);
-    printf("Target: [%.1f, %.1f]\n", targets[sample * 2],
-           targets[sample * 2 + 1]);
+  free(neuron_Values);
 
-    int out_offset =
-        2 * layer_Sizes[1] * batch_Size + sample * (2 * layer_Sizes[2]);
-    printf("Output: [%.4f, %.4f]\n", neuron_values[out_offset + 1],
-           neuron_values[out_offset + 3]);
-
-    printf("Errors: [%.4f, %.4f]\n", output_errors[sample * 2],
-           output_errors[sample * 2 + 1]);
+  printf("\n==== Test Summary ====\n");
+  if (total_errors == 0) {
+    printf("✅ All tests passed successfully!\n");
+  } else {
+    printf("❌ Found %d error(s) in implementation\n", total_errors);
   }
 }
 
 int main() {
-  test_network();
-  // test_weight_update();
+  test_forward_pass();
   return 0;
 }

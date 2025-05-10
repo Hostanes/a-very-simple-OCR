@@ -21,6 +21,14 @@ void forward_Pass(float *batch, float *weights, float *biases,
     int is_output_layer = (layer == num_Layers - 1);
 
     for (int sample = 0; sample < batch_Size; sample++) {
+      printf("SAMPLE: %d\n", sample + 1);
+
+      // Calculate the offset to this sample's data in previous layer
+      int prev_layer_offset =
+          (layer == 1)
+              ? 0
+              : (2 * layer_Sizes[layer - 1] * batch_Size * (layer - 2)) +
+                    (sample * 2 * layer_Sizes[layer - 1]);
 
       // ===========================
       // --- Z value calculation ---
@@ -29,14 +37,15 @@ void forward_Pass(float *batch, float *weights, float *biases,
         float Z = biases[bias_offset + neuron];
 
         for (int input_idx = 0; input_idx < input_size; input_idx++) {
-          // first layer takes the input from the image in *batch,
-          // else use the previous layers A values
-          float input_val =
-              (layer == 1)
-                  ? batch[sample * input_size + input_idx]
-                  : neuron_Values[(sample * (neuron_value_offset -
-                                             layer_Sizes[layer - 1] * 2)) +
-                                  (2 * input_idx) + 1];
+          float input_val;
+
+          if (layer == 1) {
+            // First hidden layer takes input directly from batch
+            input_val = batch[sample * input_size + input_idx];
+          } else {
+            // Subsequent layers take input from previous layer's A values
+            input_val = neuron_Values[prev_layer_offset + (2 * input_idx) + 1];
+          }
 
           Z += input_val *
                weights[weight_offset + neuron * input_size + input_idx];
@@ -48,13 +57,16 @@ void forward_Pass(float *batch, float *weights, float *biases,
         // ===========================
         // --- Activation Function ---
         // ===========================
-        // if ReLU layer use ReLU, instead store Z value as is to process layer
         if (!is_output_layer) {
+          // ReLU activation for hidden layers
           neuron_Values[neuron_value_offset + current_offset + 1] =
               fmaxf(0.0f, Z);
         } else {
+          // Output layer - store Z directly (softmax will process it)
           neuron_Values[neuron_value_offset + current_offset + 1] = Z;
         }
+        printf("neuron_Values: %f\n",
+               neuron_Values[neuron_value_offset + current_offset]);
       }
 
       // ================================
@@ -93,4 +105,3 @@ void forward_Pass(float *batch, float *weights, float *biases,
     neuron_value_offset += 2 * output_size * batch_Size;
   }
 }
-
