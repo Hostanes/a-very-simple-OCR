@@ -1,7 +1,4 @@
 #include "nnlib.h"
-#include <math.h>
-#include <signal.h>
-#include <stdio.h>
 
 /*
   Forward Pass for a batch:
@@ -97,3 +94,135 @@ void forward_Pass(float *batch, float *weights, float *biases,
   }
 }
 
+/*
+  Backward Pass (Gradient Calculation)
+
+  Calculates gradients for weights and biases for all layers
+  Acumulates gradients
+  Stores results in gradient_weights and gradient_biases arrays
+*/
+
+void backward_Pass(float *batch, float *weights, float *neuron_Values,
+                   float *gradient_weights, float *gradient_biases,
+                   float *output_errors, int batch_Size, int *layer_Sizes,
+                   int num_Layers) {
+  // Initialize gradients to zero
+  int total_weights = 0;
+  int total_biases = 0;
+  for (int i = 0; i < num_Layers - 1; i++) {
+    total_weights += layer_Sizes[i] * layer_Sizes[i + 1];
+    total_biases += layer_Sizes[i + 1];
+  }
+
+  memset(gradient_weights, 0, total_weights * sizeof(float));
+  memset(gradient_biases, 0, total_biases * sizeof(float));
+
+  // Find maximum layer size for error buffers
+  int max_layer_size = 0;
+  for (int i = 0; i < num_Layers; i++) {
+    if (layer_Sizes[i] > max_layer_size) {
+      max_layer_size = layer_Sizes[i];
+    }
+  }
+
+  // Allocate error buffers
+  float *errors = (float *)malloc(max_layer_size * sizeof(float));
+  float *errors_next = (float *)malloc(max_layer_size * sizeof(float));
+
+  // Initialize offsets
+  int weight_offset = total_weights;
+  int bias_offset = total_biases;
+  int neuron_offset = 0;
+
+  // Calculate initial neuron values offset
+  for (int i = 1; i < num_Layers; i++) {
+    neuron_offset += 2 * layer_Sizes[i] * batch_Size;
+  }
+
+  // Backward pass through layers
+  for (int layer = num_Layers - 1; layer >= 1; layer--) {
+    int input_size = layer_Sizes[layer - 1];
+    int output_size = layer_Sizes[layer];
+
+    // Update offsets for current layer
+    weight_offset -= input_size * output_size;
+    neuron_offset -= 2 * output_size * batch_Size;
+    bias_offset -= output_size;
+
+    for (int sample = 0; sample < batch_Size; sample++) {
+      // Calculate errors for current layer
+      for (int neuron = 0; neuron < output_size; neuron++) {
+        int idx = neuron_offset + sample * (2 * output_size) + (2 * neuron);
+        float Z = neuron_Values[idx];
+
+        if (layer == num_Layers - 1) {
+          // Output layer - use direct error
+          errors[neuron] = output_errors[sample * output_size + neuron];
+        } else {
+          // Hidden layer - backpropagate error
+          errors[neuron] = 0.0f;
+
+          // Find the starting index of weights for next layer
+          int next_weight_offset = 0;
+          for (int l = 0; l < layer; l++) {
+            next_weight_offset += layer_Sizes[l] * layer_Sizes[l + 1];
+          }
+
+          // Sum errors from next layer
+          for (int next_neuron = 0; next_neuron < layer_Sizes[layer + 1];
+               next_neuron++) {
+            int weight_idx =
+                next_weight_offset + next_neuron * output_size + neuron;
+            errors[neuron] += errors_next[next_neuron] * weights[weight_idx];
+          }
+
+          // Apply ReLU derivative
+          errors[neuron] *= (Z > 0) ? 1.0f : 0.0f;
+        }
+      }
+
+      // Calculate gradients for current layer
+      for (int neuron = 0; neuron < output_size; neuron++) {
+        // Bias gradient
+        gradient_biases[bias_offset + neuron] += errors[neuron];
+
+        // Weight gradients
+        for (int input_idx = 0; input_idx < input_size; input_idx++) {
+          // Get input activation
+          float input_activation;
+          if (layer == 1) {
+            // Input layer - get from batch
+            input_activation = batch[sample * input_size + input_idx];
+          } else {
+            // Hidden layer - get from previous layer's activations
+            int prev_idx = (neuron_offset - 2 * input_size * batch_Size) +
+                           sample * (2 * input_size) + (2 * input_idx) + 1;
+            input_activation = neuron_Values[prev_idx];
+          }
+
+          // Update weight gradient
+          gradient_weights[weight_offset + neuron * input_size + input_idx] +=
+              errors[neuron] * input_activation;
+        }
+      }
+
+      // Store errors for next layer (only needed for hidden layers)
+      if (layer > 1) {
+        memcpy(errors_next, errors, output_size * sizeof(float));
+      }
+    }
+  }
+
+  // Average gradients over batch
+  float inv_batch_size = 1.0f / batch_Size;
+  for (int i = 0; i < total_weights; i++) {
+    gradient_weights[i] *= inv_batch_size;
+  }
+  for (int i = 0; i < total_biases; i++) {
+    gradient_biases[i] *= inv_batch_size;
+  }
+
+  // Clean up
+  free(errors);
+  free(errors_next);
+}
