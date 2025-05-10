@@ -226,3 +226,42 @@ void backward_Pass(float *batch, float *weights, float *neuron_Values,
   free(errors);
   free(errors_next);
 }
+
+/*
+  Update Weights and Biases using Gradient Descent
+
+  Updates the weights and biases arrays in-place using the calculated gradients
+  and a specified learning rate.
+
+  Parameters:
+  - weights: Current weights array (flattened 1D)
+  - biases: Current biases array (flattened 1D)
+  - gradient_weights: Gradients for weights from backward pass
+  - gradient_biases: Gradients for biases from backward pass
+  - learning_rate: Step size for gradient descent
+  - layer_Sizes: Array of layer sizes
+  - num_Layers: Total number of layers in network
+*/
+void update_Weights(float *weights, float *biases,
+                    const float *gradient_weights, const float *gradient_biases,
+                    float learning_rate, const int *layer_Sizes,
+                    int num_Layers) {
+  // Calculate total number of weights and biases
+  int total_weights = 0;
+  int total_biases = 0;
+
+  for (int i = 0; i < num_Layers - 1; i++) {
+    total_weights += layer_Sizes[i] * layer_Sizes[i + 1];
+    total_biases += layer_Sizes[i + 1];
+  }
+
+  // Update weights
+  for (int i = 0; i < total_weights; i++) {
+    weights[i] -= learning_rate * gradient_weights[i];
+  }
+
+  // Update biases
+  for (int i = 0; i < total_biases; i++) {
+    biases[i] -= learning_rate * gradient_biases[i];
+  }
+}
