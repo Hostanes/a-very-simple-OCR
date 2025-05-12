@@ -1,3 +1,8 @@
+/*
+  A quick test to figure out how to do
+  one hot activations using a single int label
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

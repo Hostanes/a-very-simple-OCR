@@ -1,3 +1,15 @@
+
+/*
+  A test of the forward and backward operations on the DNN
+  layer sizes:
+  - 2 input values
+  - ReLU H1: 3
+  - ReLU H2: 3
+  - Softmax Output: 2
+  Uses 3 samples in a single batch
+  TODO test more than 1 batch
+*/
+
 #include "../lib/nnlib.h"
 #include <math.h>
 #include <stdio.h>
@@ -16,28 +28,28 @@ float batch[] = {
 
 // Weights (manually constructed to test specific cases)
 float weights[] = {
-    // Layer 1 weights (2x3):
+    // Layer 1 weights (2x3) indicies 0 -> 5:
     0.1f, 0.2f, // Neuron 1 weights
     0.3f, 0.4f, // Neuron 2 weights
     0.5f, 0.6f, // Neuron 3 weights
 
-    // Layer 2 (3x3 identity)
+    // Layer 2 (3x3 identity) indicies 6 -> 14:
     1.0f, 0.0f, 0.0f, // Neuron 1
     0.0f, 1.0f, 0.0f, // Neuron 2
     0.0f, 0.0f, 1.0f, // Neuron 3
 
-    // Layer 2 weights (3x2):
+    // Layer 2 weights (3x2)indicies 15 -> 20:
     1.0f, 1.1f, 1.2f, // Neuron 1 weights
     1.3f, 1.4f, 1.5f  // Neuron 2 weights
 };
 
 // Biases
 float biases[] = {
-    0.1f, 0.2f, 0.3f, // Layer 1 biases
+    0.1f, 0.2f, 0.3f, // Layer 1 biases 0 -> 2
 
-    0.0f, 0.0f, 0.0f, // Layer 2 (identity)
+    0.0f, 0.0f, 0.0f, // Layer 2 (identity) 3 -> 5
 
-    0.4f, 0.5f // Layer 2 biases
+    0.4f, 0.5f // Layer 2 biases -> 6, 7
 };
 
 void print_comparison(const char *label, float expected, float actual,

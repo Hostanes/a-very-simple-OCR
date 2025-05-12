@@ -1,3 +1,8 @@
+/*
+  nnlib.c
+  A serial implementation of a Batched Stochastic Gradient Descent
+*/
+
 #include "nnlib.h"
 
 /*
@@ -13,6 +18,23 @@
 #define printf(fmt, ...) (0)
 #endif
 
+/*
+  forward_Pass
+
+  takes a `batch` of inputs, runs through each layer
+  and calculates each Z and A value for each neuron
+  for each sample in batch. Stored in `neuron_Values`
+
+  neuron_Values array is a 1d array in this form:
+  {
+    neuron 1 layer 1,
+    neuron 2 layer 1,
+    neuron 3 layer 1,
+    neuron 1 layer 2,
+    ...
+    neuron 2 layer 3
+  }
+*/
 void forward_Pass(float *batch, float *weights, float *biases,
                   float *neuron_Values, int batch_Size, int *layer_Sizes,
                   int num_Layers) {
@@ -148,15 +170,21 @@ void forward_Pass(float *batch, float *weights, float *biases,
     neuron_value_offset += 2 * output_size * batch_Size;
   }
 }
-/*
-  Backward pass
-*/
 
+/*
+  backward_Pass
+
+  Runs backwards in the network starting from output layer,
+  Calculates gradients of each weight
+  - `gradients`: weight gradients
+  - `bias_gradients`: bias gradients
+  - same size and shape as `biases` and `weights` arrays
+*/
 void backward_Pass(float *batch, float *weights, float *biases,
-                   float *neuron_Values, float *targets, float *gradients,
-                   float *bias_gradients, float *errors, int batch_Size,
-                   int *layer_Sizes, int num_Layers, int num_Of_Weights,
-                   int num_Of_Neurons) {
+                   float *neuron_Values, float *targets,
+                   float *weight_Gradients, float *bias_Gradients,
+                   float *errors, int batch_Size, int *layer_Sizes,
+                   int num_Layers, int num_Of_Weights, int num_Of_Neurons) {
 
   int last_hidden_size = layer_Sizes[num_Layers - 2];
   int output_size = layer_Sizes[num_Layers - 1];
@@ -250,15 +278,16 @@ void backward_Pass(float *batch, float *weights, float *biases,
 
         errors[value_offset_curr + neuron_offset] = dLoss_dZ;
 
-        bias_gradients[bias_start_index + neuron] += dLoss_dZ;
+        bias_Gradients[bias_start_index + neuron] += dLoss_dZ;
         printf("        errors_curr[%d] = %.6f, bias_gradients[%d] += %.6f "
                "(now %.6f)\n",
                value_offset_curr + neuron_offset, dLoss_dZ,
                bias_start_index + neuron, dLoss_dZ,
-               bias_gradients[bias_start_index + neuron]);
+               bias_Gradients[bias_start_index + neuron]);
 
         // ====================================
         // --- Compute gradient wrt weights ---
+        // ====================================
         printf("      Calculating weight gradients:\n");
         for (int i = 0; i < input_size; i++) {
           float input_val;
@@ -273,14 +302,15 @@ void backward_Pass(float *batch, float *weights, float *biases,
                    value_offset_prev + sample * 2 * input_size + 2 * i + 1,
                    input_val);
           }
-          float weight_gradient = input_val * dLoss_dZ;
-          gradients[layer_start_index + neuron * input_size + i] +=
-              weight_gradient;
+          float weight_Gradient = input_val * dLoss_dZ;
+          weight_Gradients[layer_start_index + neuron * input_size + i] +=
+              weight_Gradient;
           printf("        i = %d, input_val = %.6f, dLoss_dZ = %.6f, "
-                 "weight_gradient = %.6f, gradients[%d] += %.6f (now %.6f)\n",
-                 i, input_val, dLoss_dZ, weight_gradient,
-                 layer_start_index + neuron * input_size + i, weight_gradient,
-                 gradients[layer_start_index + neuron * input_size + i]);
+                 "weight_gradient = %.6f, weight_Gradients[%d] += %.6f (now "
+                 "%.6f)\n",
+                 i, input_val, dLoss_dZ, weight_Gradient,
+                 layer_start_index + neuron * input_size + i, weight_Gradient,
+                 weight_Gradients[layer_start_index + neuron * input_size + i]);
         }
       }
     }
@@ -288,3 +318,17 @@ void backward_Pass(float *batch, float *weights, float *biases,
     weight_offset -= input_size * output_size;
   }
 }
+
+/*
+  update_Weights
+
+  pseudocode:
+  for(i = 0; i < num_weights; i++)
+    // weight and gradient weights same shape
+    weight[i] -= learning_Rate * gradient_weight[i]
+
+  for(i = 0; i < num_biases; i++)
+    // biases and gradient biases same shape
+    bias[i]-= learning_Rate * gradient_biases[i]
+
+*/
