@@ -154,5 +154,6 @@ void test_forward_and_backward_pass() {
 
 int main() {
   test_forward_and_backward_pass();
+
   return 0;
 }

@@ -8,6 +8,11 @@
   one operation.
   and stores them in the `neuron_Values' array
 */
+
+#ifndef VERBOSE
+#define printf(fmt, ...) (0)
+#endif
+
 void forward_Pass(float *batch, float *weights, float *biases,
                   float *neuron_Values, int batch_Size, int *layer_Sizes,
                   int num_Layers) {
@@ -15,13 +20,19 @@ void forward_Pass(float *batch, float *weights, float *biases,
   int bias_offset = 0;
   int neuron_value_offset = 0;
 
+  printf("\n--- Forward Pass ---\n");
+
   for (int layer = 1; layer < num_Layers; layer++) {
     int input_size = layer_Sizes[layer - 1];
     int output_size = layer_Sizes[layer];
     int is_output_layer = (layer == num_Layers - 1);
 
+    printf("\nLayer %d:\n", layer);
+    printf("  Input size: %d, Output size: %d\n", input_size, output_size);
+
+    // TODO data parallelism here
     for (int sample = 0; sample < batch_Size; sample++) {
-      printf("SAMPLE: %d\n", sample + 1);
+      printf("  Sample %d:\n", sample + 1);
 
       // Calculate the offset to this sample's data in previous layer
       int prev_layer_offset =
@@ -29,12 +40,21 @@ void forward_Pass(float *batch, float *weights, float *biases,
               ? 0
               : (2 * layer_Sizes[layer - 1] * batch_Size * (layer - 2)) +
                     (sample * 2 * layer_Sizes[layer - 1]);
+      printf("    Previous layer offset: %d\n", prev_layer_offset);
 
       // ===========================
       // --- Z value calculation ---
       // ===========================
+
+      // TODO model parallelism here,
+      // might need to switch the sample
+      // and layer for loops here in forward,
       for (int neuron = 0; neuron < output_size; neuron++) {
         float Z = biases[bias_offset + neuron];
+        printf("    Neuron %d:\n", neuron + 1);
+
+        printf("      Bias: biases[%d] = %.6f\n", bias_offset + neuron,
+               biases[bias_offset + neuron]);
 
         for (int input_idx = 0; input_idx < input_size; input_idx++) {
           float input_val;
@@ -42,17 +62,29 @@ void forward_Pass(float *batch, float *weights, float *biases,
           if (layer == 1) {
             // First hidden layer takes input directly from batch
             input_val = batch[sample * input_size + input_idx];
+            printf("        Input from batch[%d]: %.6f\n",
+                   sample * input_size + input_idx, input_val);
           } else {
+
             // Subsequent layers take input from previous layer's A values
             input_val = neuron_Values[prev_layer_offset + (2 * input_idx) + 1];
+            printf("        Input from prev layer A[%d]: %.6f\n",
+                   prev_layer_offset + (2 * input_idx) + 1, input_val);
           }
 
-          Z += input_val *
-               weights[weight_offset + neuron * input_size + input_idx];
+          float weight =
+              weights[weight_offset + neuron * input_size + input_idx];
+          Z += input_val * weight;
+          printf(
+              "        Weight: weights[%d] = %.6f, Z += %.6f * %.6f = %.6f\n",
+              weight_offset + neuron * input_size + input_idx, weight,
+              input_val, weight, input_val * weight);
         }
 
         int current_offset = sample * (2 * output_size) + (2 * neuron);
         neuron_Values[neuron_value_offset + current_offset] = Z;
+        printf("      Z = %.6f, neuron_Values[%d] = %.6f\n", Z,
+               neuron_value_offset + current_offset, Z);
 
         // ===========================
         // --- Activation Function ---
@@ -61,19 +93,23 @@ void forward_Pass(float *batch, float *weights, float *biases,
           // ReLU activation for hidden layers
           neuron_Values[neuron_value_offset + current_offset + 1] =
               fmaxf(0.0f, Z);
+          printf("      ReLU(Z) = %.6f, neuron_Values[%d] = %.6f\n",
+                 neuron_Values[neuron_value_offset + current_offset + 1],
+                 neuron_value_offset + current_offset + 1,
+                 neuron_Values[neuron_value_offset + current_offset + 1]);
         } else {
           // Output layer - store Z directly (softmax will process it)
           neuron_Values[neuron_value_offset + current_offset + 1] = Z;
+          printf("      Output Z = %.6f, neuron_Values[%d] = %.6f\n", Z,
+                 neuron_value_offset + current_offset + 1, Z);
         }
-
-        printf("neuron_Values: %f\n",
-               neuron_Values[neuron_value_offset + current_offset + 1]);
       }
 
       // ================================
       // --- Softmax for output layer ---
       // ================================
       if (is_output_layer) {
+        printf("    --- Softmax ---\n");
         // Find max for numerical stability
         float max_Z = -INFINITY;
         for (int neuron = 0; neuron < output_size; neuron++) {
@@ -82,6 +118,7 @@ void forward_Pass(float *batch, float *weights, float *biases,
             max_Z = neuron_Values[neuron_value_offset + offset];
           }
         }
+        printf("      Max Z = %.6f\n", max_Z);
 
         // Compute exp and exp sum
         float sum_exp = 0.0f;
@@ -91,12 +128,17 @@ void forward_Pass(float *batch, float *weights, float *biases,
               expf(neuron_Values[neuron_value_offset + offset] - max_Z);
           neuron_Values[neuron_value_offset + offset + 1] = exp_val;
           sum_exp += exp_val;
+          printf("      Neuron %d: Z - max_Z = %.6f, exp = %.6f\n", neuron + 1,
+                 neuron_Values[neuron_value_offset + offset] - max_Z, exp_val);
         }
+        printf("      Sum of exps = %.6f\n", sum_exp);
 
         // Normalize to probabilities
         for (int neuron = 0; neuron < output_size; neuron++) {
           int offset = sample * (2 * output_size) + (2 * neuron) + 1;
           neuron_Values[neuron_value_offset + offset] /= sum_exp;
+          printf("      Neuron %d: Probability = %.6f\n", neuron + 1,
+                 neuron_Values[neuron_value_offset + offset]);
         }
       }
     }
@@ -106,7 +148,6 @@ void forward_Pass(float *batch, float *weights, float *biases,
     neuron_value_offset += 2 * output_size * batch_Size;
   }
 }
-
 /*
   Backward pass
 */
@@ -166,8 +207,11 @@ void backward_Pass(float *batch, float *weights, float *biases,
 
     printf("\nLayer %d:\n", layer);
 
+    // TODO data parallelism here
     for (int sample = 0; sample < batch_Size; sample++) {
       printf("  Sample %d:\n", sample + 1);
+
+      // TODO model paraallelism here
       for (int neuron = 0; neuron < output_size; neuron++) {
         int neuron_offset = sample * (2 * output_size) + (2 * neuron);
         float dLoss_dZ;
@@ -213,6 +257,7 @@ void backward_Pass(float *batch, float *weights, float *biases,
                bias_start_index + neuron, dLoss_dZ,
                bias_gradients[bias_start_index + neuron]);
 
+        // ====================================
         // --- Compute gradient wrt weights ---
         printf("      Calculating weight gradients:\n");
         for (int i = 0; i < input_size; i++) {
