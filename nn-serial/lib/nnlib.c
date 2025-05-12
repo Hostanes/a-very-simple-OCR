@@ -330,5 +330,20 @@ void backward_Pass(float *batch, float *weights, float *biases,
   for(i = 0; i < num_biases; i++)
     // biases and gradient biases same shape
     bias[i]-= learning_Rate * gradient_biases[i]
-
 */
+
+void update_Weights(float *weights, float *biases, float *weight_Gradients,
+                    float learning_Rate, float *bias_Gradients, int num_Weights,
+                    int num_Biases) {
+
+  for (int i = 0; i < num_Weights; i++) {
+    weights[i] -= learning_Rate * weight_Gradients[i];
+  }
+
+  for (int i = 0; i < num_Biases; i++) {
+    biases[i] -= learning_Rate * bias_Gradients[i];
+  }
+
+  //
+  //
+}

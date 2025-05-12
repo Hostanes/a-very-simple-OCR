@@ -17,6 +17,8 @@
 
 #define FLOAT_TOLERANCE 1e-6
 
+#define LEARNING_RATE 0.01
+
 int layer_Sizes[] = {2, 3, 3, 2};
 
 // Test data - 3 samples
@@ -158,6 +160,22 @@ void test_forward_and_backward_pass() {
   for (int i = 0; i < num_Of_Biases; i++) {
     printf("b[%d] grad = %.6f\n", i, bias_Gradients[i]);
   }
+
+  printf("=== Updating Weights ===\n");
+
+  update_Weights(weights, biases, gradients, LEARNING_RATE, bias_Gradients,
+                 num_Of_Weights, num_Of_Biases);
+
+  printf("\nNew weights:\n");
+  for(int i = 0; i < num_Of_Weights; i++){
+    printf("updated weights[%d] = %f\n", i, weights[i]);
+  }
+  
+  printf("\nNew biases: \n");
+  for(int i = 0; i < num_Of_Biases; i++){
+        printf("updated biases[%d] = %f\n", i, biases[i]);
+  }
+
 
   free(neuron_Values);
   free(errors);

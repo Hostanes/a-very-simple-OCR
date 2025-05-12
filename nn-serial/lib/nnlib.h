@@ -14,3 +14,7 @@ void backward_Pass(float *batch, float *weights, float *biases,
                    float *bias_gradients, float *errors, int batch_Size,
                    int *layer_Sizes, int num_Layers, int num_Of_Weights,
                    int num_Of_Neurons);
+
+void update_Weights(float *weights, float *biases, float *weight_Gradients,
+                    float learning_Rate, float *bias_Gradients, int num_Weights,
+                    int num_Biases);
