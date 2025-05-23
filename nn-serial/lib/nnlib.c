@@ -18,6 +18,39 @@
 #define printf(fmt, ...) (0)
 #endif
 
+#define LEAKY_RELU_ALPHA 0.01f
+
+float leaky_ReLU(float x) { return (x > 0) ? x : LEAKY_RELU_ALPHA * x; }
+
+void initialize_weights(float *weights, float *biases, int *layer_Sizes,
+                        int num_Layers) {
+  int weight_Index = 0;
+  int bias_Index = 0;
+
+  for (int l = 1; l < num_Layers; l++) {
+    int fan_in = layer_Sizes[l - 1];
+    int fan_out = layer_Sizes[l];
+
+    // Replace your initialization with debug prints:
+    float limit = sqrtf(6.0f / (fan_in + fan_out));
+    printf("Layer %d: fan_in=%d fan_out=%d limit=%.6f\n", l, fan_in, fan_out,
+           limit);
+
+    // For MNIST first layer (784->512), limit should be ~0.06
+    // If it's orders of magnitude different, initialization is broken
+
+    // #pragma omp parallel for
+    for (int j = 0; j < fan_out; j++) {
+      for (int i = 0; i < fan_in; i++) {
+        float r = ((float)rand() / RAND_MAX);     // [0, 1]
+        float weight = (2.0f * r - 1.0f) * limit; // [-limit, limit]
+        weights[weight_Index++] = weight;
+      }
+      biases[bias_Index++] = 0.0f; // Biases set to 0
+    }
+  }
+}
+
 /*
   forward_Pass
 
@@ -53,6 +86,7 @@ void forward_Pass(float *batch, float *weights, float *biases,
     printf("  Input size: %d, Output size: %d\n", input_size, output_size);
 
     // TODO data parallelism here
+    // #pragma omp parallel for
     for (int sample = 0; sample < batch_Size; sample++) {
       printf("  Sample %d:\n", sample + 1);
 
@@ -71,6 +105,7 @@ void forward_Pass(float *batch, float *weights, float *biases,
       // TODO model parallelism here,
       // might need to switch the sample
       // and layer for loops here in forward,
+      // #pragma omp parallel for
       for (int neuron = 0; neuron < output_size; neuron++) {
         float Z = biases[bias_offset + neuron];
         printf("    Neuron %d:\n", neuron + 1);
@@ -114,7 +149,7 @@ void forward_Pass(float *batch, float *weights, float *biases,
         if (!is_output_layer) {
           // ReLU activation for hidden layers
           neuron_Values[neuron_value_offset + current_offset + 1] =
-              fmaxf(0.0f, Z);
+              leaky_ReLU(Z);
           printf("      ReLU(Z) = %.6f, neuron_Values[%d] = %.6f\n",
                  neuron_Values[neuron_value_offset + current_offset + 1],
                  neuron_value_offset + current_offset + 1,
@@ -186,136 +221,148 @@ void backward_Pass(float *batch, float *weights, float *biases,
                    float *errors, int batch_Size, int *layer_Sizes,
                    int num_Layers, int num_Of_Weights, int num_Of_Neurons) {
 
-  int last_hidden_size = layer_Sizes[num_Layers - 2];
-  int output_size = layer_Sizes[num_Layers - 1];
+  // Calculate total error size needed
+  int errors_Size = 0;
+  for (int i = 1; i < num_Layers; i++) {
+    errors_Size += layer_Sizes[i] * batch_Size;
+  }
 
-  int weight_offset = num_Of_Weights - last_hidden_size * output_size;
-  int value_offset = num_Of_Neurons - 2 * output_size * batch_Size;
+  // Initialize error offset tracker
+  int error_offset = 0;
 
   // ====================================
   // --- Output layer error (softmax) ---
   // ====================================
+  int output_size = layer_Sizes[num_Layers - 1];
+  int output_value_offset = num_Of_Neurons - 2 * output_size * batch_Size;
+
   printf("\n--- Output Layer Error ---\n");
   for (int sample = 0; sample < batch_Size; sample++) {
     for (int neuron = 0; neuron < output_size; neuron++) {
-      int offset = sample * (2 * output_size) + (2 * neuron) + 1;
-      float prediction = neuron_Values[value_offset + offset];
+      int value_offset = sample * (2 * output_size) + (2 * neuron) + 1;
+      float prediction = neuron_Values[output_value_offset + value_offset];
       float target = targets[sample * output_size + neuron];
-      errors[value_offset + offset - 1] = prediction - target;
-      printf("Sample %d, Neuron %d: Prediction = %.6f, Target = %.6f, Error "
-             "(dLoss/dZ) = %.6f\n",
+      errors[error_offset + sample * output_size + neuron] =
+          prediction - target;
+
+      printf("Sample %d, Neuron %d: Prediction = %.6f, Target = %.6f, Error = "
+             "%.6f\n",
              sample + 1, neuron + 1, prediction, target,
-             errors[value_offset + offset - 1]);
+             errors[error_offset + sample * output_size + neuron]);
     }
   }
+  error_offset += output_size * batch_Size;
 
   // ========================
-  // --- Backpropagation   ---
+  // --- Backpropagation  ---
   // ========================
   printf("\n--- Backpropagation ---\n");
-  for (int layer = num_Layers - 1; layer > 0; layer--) {
-    int input_size = layer_Sizes[layer - 1];
-    int output_size = layer_Sizes[layer];
-    int is_output_layer = (layer == num_Layers - 1);
 
-    // Calculate the starting index for the current layer's weights
-    int layer_start_index = 0;
-    for (int l = 1; l < layer; l++) {
-      layer_start_index += layer_Sizes[l - 1] * layer_Sizes[l];
+  // Start from last hidden layer and move backwards
+  for (int layer = num_Layers - 2; layer > 0; layer--) {
+    int current_size = layer_Sizes[layer];
+    int next_size = layer_Sizes[layer + 1];
+    int prev_size = layer_Sizes[layer - 1];
+
+    // Calculate weight and bias offsets for this layer
+    int weight_offset = 0;
+    int bias_offset = 0;
+    for (int l = 1; l <= layer; l++) {
+      weight_offset += layer_Sizes[l - 1] * layer_Sizes[l];
     }
 
-    int bias_start_index = 0;
     for (int l = 1; l < layer; l++) {
-      bias_start_index += layer_Sizes[l];
+      bias_offset += layer_Sizes[l];
     }
 
-    int value_offset_curr = (layer - 1) * 2 * output_size * batch_Size;
-    int value_offset_prev =
-        (layer - 2 >= 0) ? (layer - 2) * 2 * input_size * batch_Size : 0;
+    int value_offset_curr = 0; // Offset for current layer's Z values
+    int value_offset_prev = 0; // Offset for previous layer's A values
 
-    printf("\nLayer %d:\n", layer);
+    // Calculate value offsets
+    for (int l = 1; l < layer; l++) {
+      value_offset_curr += 2 * layer_Sizes[l] * batch_Size;
+    }
+    if (layer > 1) {
+      for (int l = 1; l < layer - 1; l++) {
+        value_offset_prev += 2 * layer_Sizes[l] * batch_Size;
+      }
+    }
 
-    // TODO data parallelism here
+    printf("\nLayer %d (size %d):\n", layer, current_size);
+
     for (int sample = 0; sample < batch_Size; sample++) {
       printf("  Sample %d:\n", sample + 1);
 
-      // TODO model paraallelism here
-      for (int neuron = 0; neuron < output_size; neuron++) {
-        int neuron_offset = sample * (2 * output_size) + (2 * neuron);
-        float dLoss_dZ;
-
+      for (int neuron = 0; neuron < current_size; neuron++) {
         printf("    Neuron %d:\n", neuron + 1);
 
-        if (is_output_layer) {
-          dLoss_dZ = errors[value_offset + neuron_offset];
-          printf("      (Output Layer) dLoss_dZ = errors[%d] = %.6f\n",
-                 value_offset + neuron_offset, dLoss_dZ);
-        } else {
-          // Sum over next layer's errors weighted by connection
-          dLoss_dZ = 0.0f;
-          printf("      Calculating dLoss_dZ (from next layer):\n");
-          for (int k = 0; k < layer_Sizes[layer + 1]; k++) {
-            int w_idx = weight_offset + k * output_size + neuron;
-            int err_idx = (layer * 2 * layer_Sizes[layer + 1] * batch_Size) +
-                          (sample * 2 * layer_Sizes[layer + 1]) + (2 * k);
-            float error_next = errors[err_idx];
-            float weight_val = weights[w_idx];
-            dLoss_dZ += error_next * weight_val;
-            printf("        k = %d, error_next[%d] = %.6f, weights[%d] = %.6f, "
-                   "dLoss_dZ += %.6f\n",
-                   k + 1, err_idx, error_next, w_idx, weight_val,
-                   error_next * weight_val);
-          }
+        // Calculate dLoss/dZ for this neuron
+        float dLoss_dZ = 0.0f;
+        printf("      Calculating dLoss_dZ from next layer (size %d):\n",
+               next_size);
 
-          // Apply ReLU derivative
-          float Z = neuron_Values[value_offset_curr + neuron_offset];
-          float relu_derivative = (Z > 0) ? 1.0f : 0.0f;
-          dLoss_dZ *= relu_derivative;
-          printf(
-              "      Z = %.6f, ReLU' = %.1f, dLoss_dZ (after ReLU') = %.6f\n",
-              Z, relu_derivative, dLoss_dZ);
+        for (int k = 0; k < next_size; k++) {
+          int next_layer_error_idx =
+              (error_offset - next_size * batch_Size) + sample * next_size + k;
+          int weight_idx = weight_offset + k * current_size + neuron;
+
+          dLoss_dZ += errors[next_layer_error_idx] * weights[weight_idx];
+
+          printf("        k=%d: error[%d]=%.6f * weight[%d]=%.6f => += %.6f\n",
+                 k, next_layer_error_idx, errors[next_layer_error_idx],
+                 weight_idx, weights[weight_idx],
+                 errors[next_layer_error_idx] * weights[weight_idx]);
         }
 
-        errors[value_offset_curr + neuron_offset] = dLoss_dZ;
+        // Apply activation derivative (ReLU)
+        int z_offset =
+            value_offset_curr + sample * (2 * current_size) + (2 * neuron);
+        float Z = neuron_Values[z_offset];
+        float relu_derivative = (Z > 0) ? 1.0f : LEAKY_RELU_ALPHA;
+        dLoss_dZ *= relu_derivative;
 
-        bias_Gradients[bias_start_index + neuron] += dLoss_dZ;
-        printf("        errors_curr[%d] = %.6f, bias_gradients[%d] += %.6f "
-               "(now %.6f)\n",
-               value_offset_curr + neuron_offset, dLoss_dZ,
-               bias_start_index + neuron, dLoss_dZ,
-               bias_Gradients[bias_start_index + neuron]);
+        printf("      Z=%.6f, ReLU'=%.1f => dLoss_dZ=%.6f\n", Z,
+               relu_derivative, dLoss_dZ);
 
-        // ====================================
-        // --- Compute gradient wrt weights ---
-        // ====================================
+        // Store error for this neuron
+        errors[error_offset + sample * current_size + neuron] = dLoss_dZ;
+        printf("      Stored error[%d] = %.6f\n",
+               error_offset + sample * current_size + neuron, dLoss_dZ);
+
+        // Update bias gradient
+        bias_Gradients[bias_offset + neuron] += dLoss_dZ;
+        printf("      bias_gradients[%d] += %.6f (now %.6f)\n",
+               bias_offset + neuron, dLoss_dZ,
+               bias_Gradients[bias_offset + neuron]);
+
+        // Update weight gradients
         printf("      Calculating weight gradients:\n");
-        for (int i = 0; i < input_size; i++) {
+        for (int i = 0; i < prev_size; i++) {
           float input_val;
           if (layer == 1) {
-            input_val = batch[sample * input_size + i];
-            printf("        (Input Layer) input_val[%d] = %.6f\n",
-                   sample * input_size + i, input_val);
+            input_val = batch[sample * prev_size + i];
+            printf("        Input from batch[%d]: %.6f\n",
+                   sample * prev_size + i, input_val);
           } else {
             input_val = neuron_Values[value_offset_prev +
-                                      sample * 2 * input_size + 2 * i + 1];
-            printf("        (Prev Layer A) input_val[%d] = %.6f\n",
-                   value_offset_prev + sample * 2 * input_size + 2 * i + 1,
+                                      sample * (2 * prev_size) + (2 * i) + 1];
+            printf("        Input from prev layer A[%d]: %.6f\n",
+                   value_offset_prev + sample * (2 * prev_size) + (2 * i) + 1,
                    input_val);
           }
-          float weight_Gradient = input_val * dLoss_dZ;
-          weight_Gradients[layer_start_index + neuron * input_size + i] +=
-              weight_Gradient;
-          printf("        i = %d, input_val = %.6f, dLoss_dZ = %.6f, "
-                 "weight_gradient = %.6f, weight_Gradients[%d] += %.6f (now "
-                 "%.6f)\n",
-                 i, input_val, dLoss_dZ, weight_Gradient,
-                 layer_start_index + neuron * input_size + i, weight_Gradient,
-                 weight_Gradients[layer_start_index + neuron * input_size + i]);
+
+          float grad = input_val * dLoss_dZ;
+          int grad_idx = weight_offset + neuron * prev_size + i;
+          weight_Gradients[grad_idx] += grad;
+
+          printf(
+              "        weight_Gradients[%d] += %.6f * %.6f = %.6f (now %.6f)\n",
+              grad_idx, input_val, dLoss_dZ, grad, weight_Gradients[grad_idx]);
         }
       }
     }
 
-    weight_offset -= input_size * output_size;
+    error_offset += current_size * batch_Size;
   }
 }
 
@@ -334,16 +381,76 @@ void backward_Pass(float *batch, float *weights, float *biases,
 
 void update_Weights(float *weights, float *biases, float *weight_Gradients,
                     float learning_Rate, float *bias_Gradients, int num_Weights,
-                    int num_Biases) {
+                    int num_Biases, int batch_Size) {
+
+  float inv_batch_size = 1.0f / batch_Size;
 
   for (int i = 0; i < num_Weights; i++) {
-    weights[i] -= learning_Rate * weight_Gradients[i];
+    weights[i] -= learning_Rate * (weight_Gradients[i] * inv_batch_size);
+    weight_Gradients[i] = 0.0f; // Reset for next batch
   }
 
   for (int i = 0; i < num_Biases; i++) {
-    biases[i] -= learning_Rate * bias_Gradients[i];
+    biases[i] -= learning_Rate * (bias_Gradients[i] * inv_batch_size);
+    bias_Gradients[i] = 0.0f; // Reset for next batch
   }
+}
 
-  //
-  //
+float compute_loss(float *neuron_Values, float *targets, int batch_Size,
+                   int output_size, int num_Layers) {
+  float loss = 0.0f;
+  int value_offset = 2 * output_size * batch_Size * (num_Layers - 1);
+
+  for (int sample = 0; sample < batch_Size; sample++) {
+    for (int neuron = 0; neuron < output_size; neuron++) {
+      int offset = sample * (2 * output_size) + (2 * neuron) + 1;
+      float pred = neuron_Values[value_offset + offset];
+      float target = targets[sample * output_size + neuron];
+      loss += -target * logf(pred + 1e-8); // Cross-entropy
+    }
+  }
+  return loss / batch_Size;
+}
+
+void gradient_check(float *batch, float *weights, float *biases,
+                    float *neuron_Values, float *targets,
+                    float *weight_Gradients, float *bias_Gradients,
+                    float *errors, int batch_Size, int *layer_Sizes,
+                    int num_Layers, int num_Of_Weights, int num_Of_Neurons) {
+
+  float epsilon = 1e-4;
+  int test_weight_index = 0; // Test first weight for simplicity
+
+  // Analytic gradient (from backprop)
+  backward_Pass(batch, weights, biases, neuron_Values, targets,
+                weight_Gradients, bias_Gradients, errors, batch_Size,
+                layer_Sizes, num_Layers, num_Of_Weights, num_Of_Neurons);
+  float analytic_grad = weight_Gradients[test_weight_index];
+
+  // Numeric gradient
+  float original_weight = weights[test_weight_index];
+
+  // f(x + ε)
+  weights[test_weight_index] = original_weight + epsilon;
+  forward_Pass(batch, weights, biases, neuron_Values, batch_Size, layer_Sizes,
+               num_Layers);
+  float loss_plus = compute_loss(neuron_Values, targets, batch_Size,
+                                 layer_Sizes[num_Layers - 1], num_Layers);
+
+  // f(x - ε)
+  weights[test_weight_index] = original_weight - epsilon;
+  forward_Pass(batch, weights, biases, neuron_Values, batch_Size, layer_Sizes,
+               num_Layers);
+  float loss_minus = compute_loss(neuron_Values, targets, batch_Size,
+                                  layer_Sizes[num_Layers - 1], num_Layers);
+
+  float numeric_grad = (loss_plus - loss_minus) / (2 * epsilon);
+
+  printf("Gradient Check:\n");
+  printf("Analytic: %.8f vs Numeric: %.8f\n", analytic_grad, numeric_grad);
+  printf("Relative Error: %.8f\n", fabs(analytic_grad - numeric_grad) /
+                                       fabs(analytic_grad + numeric_grad));
+
+  // Reset weight
+  weights[test_weight_index] = original_weight;
 }
