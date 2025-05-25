@@ -156,9 +156,8 @@ float *forward_pass_batch(NeuralNetwork_t *net, float *inputs, int batch_size) {
   for (int l = 0; l < net->num_layers; l++) {
     Layer_t *layer = &net->layers[l];
 
-// Parallelize across output dimensions first for better cache locality
-#pragma omp parallel for
     for (int j = 0; j < layer->output_size; j++) {
+#pragma omp parallel for
       for (int b = 0; b < batch_size; b++) {
         float sum = layer->biases[j];
         for (int k = 0; k < layer->input_size; k++) {

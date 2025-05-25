@@ -32,8 +32,8 @@ typedef struct {
   float *biases;          // Bias vector (output_size)
   float *weight_momentum; // Momentum for weights
   float *bias_momentum;   // Momentum for biases
-  float **outputs;        // Outputs for each sample in batch (after activation)
-  float **inputs;         // Inputs for each sample in batch (before activation)
+  float *outputs;         // Outputs for each sample in batch (after activation)
+  float *inputs;          // Inputs for each sample in batch (before activation)
   int input_size;
   int output_size;
   int batch_size;
@@ -60,17 +60,20 @@ void free_network(NeuralNetwork_t *net);
 void resize_network_batch(NeuralNetwork_t *net, int new_batch_size);
 
 // PROP FUNCS
-float **forward_pass_batch(NeuralNetwork_t *net, float **inputs,
-                           int batch_size);
-void backward_pass_batch(NeuralNetwork_t *net, float **inputs, float **targets,
+
+float *forward_pass_batch(NeuralNetwork_t *net, float *inputs, int batch_size);
+
+void backward_pass_batch(NeuralNetwork_t *net, float *inputs, float *targets,
                          int batch_size);
 
 // TRAINING FUNCS
-void train_batch(NeuralNetwork_t *net, float **inputs, float **targets,
+void train_batch(NeuralNetwork_t *net, float *inputs, float *targets,
                  int batch_size);
-int *predict_batch(NeuralNetwork_t *net, float **inputs, int batch_size);
-float calculate_batch_loss(NeuralNetwork_t *net, float **outputs,
-                           float **targets, int batch_size);
+
+int *predict_batch(NeuralNetwork_t *net, float *inputs, int batch_size);
+
+float calculate_batch_loss(NeuralNetwork_t *net, float *outputs, float *targets,
+                           int batch_size);
 
 // UTIL FUNCS
 void initialize_layer(Layer_t *layer, int input_size, int output_size,

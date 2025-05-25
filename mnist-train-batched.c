@@ -14,7 +14,7 @@
 #define LEARNING_RATE 0.0005f
 #define MOMENTUM 0.9f
 #define EPOCHS 5
-#define BATCH_SIZE 128
+#define BATCH_SIZE 32
 #define IMAGE_SIZE 28
 #define TRAIN_SPLIT 0.8
 #define PRINT_INTERVAL 1000
@@ -106,6 +106,7 @@ void print_usage(const char *program_name) {
   printf("Usage: %s <output_filename.nn>\n", program_name);
   printf("Example: %s my_model.nn\n", program_name);
 }
+
 int main(int argc, char *argv[]) {
   if (argc != 2) {
     print_usage(argv[0]);
@@ -132,12 +133,19 @@ int main(int argc, char *argv[]) {
   int train_size = (int)(data.nImages * TRAIN_SPLIT);
   int test_size = data.nImages - train_size;
 
-  float **batch_inputs = malloc(BATCH_SIZE * sizeof(float *));
-  float **batch_targets = malloc(BATCH_SIZE * sizeof(float *));
-  for (int i = 0; i < BATCH_SIZE; i++) {
-    batch_inputs[i] = malloc(INPUT_SIZE * sizeof(float));
-    batch_targets[i] = malloc(OUTPUT_SIZE * sizeof(float));
+  // Preprocess inputs and labels
+  float *normalized_inputs = malloc(data.nImages * INPUT_SIZE * sizeof(float));
+  normalize_images(data.images, normalized_inputs, data.nImages);
+
+  float *one_hot_labels = malloc(train_size * OUTPUT_SIZE * sizeof(float));
+  for (int i = 0; i < train_size; i++) {
+    memset(&one_hot_labels[i * OUTPUT_SIZE], 0, OUTPUT_SIZE * sizeof(float));
+    one_hot_labels[i * OUTPUT_SIZE + data.labels[i]] = 1.0f;
   }
+
+  // Allocate batch memory
+  float *batch_inputs = malloc(BATCH_SIZE * INPUT_SIZE * sizeof(float));
+  float *batch_targets = malloc(BATCH_SIZE * OUTPUT_SIZE * sizeof(float));
 
   printf("Starting training...\n");
   printf("Model will be saved to: %s\n", output_filename);
@@ -151,28 +159,32 @@ int main(int argc, char *argv[]) {
           (i + BATCH_SIZE <= train_size) ? BATCH_SIZE : (train_size - i);
 
       for (int j = 0; j < current_batch; j++) {
-        normalize_images(&data.images[(i + j) * INPUT_SIZE], batch_inputs[j],
-                         1);
-        memset(batch_targets[j], 0, OUTPUT_SIZE * sizeof(float));
-        batch_targets[j][data.labels[i + j]] = 1.0f;
+        memcpy(&batch_inputs[j * INPUT_SIZE],
+               &normalized_inputs[(i + j) * INPUT_SIZE],
+               INPUT_SIZE * sizeof(float));
+        memcpy(&batch_targets[j * OUTPUT_SIZE],
+               &one_hot_labels[(i + j) * OUTPUT_SIZE],
+               OUTPUT_SIZE * sizeof(float));
       }
 
       resize_network_batch(net, current_batch);
       train_batch(net, batch_inputs, batch_targets, current_batch);
 
-      float **outputs = forward_pass_batch(net, batch_inputs, current_batch);
+      float *outputs = forward_pass_batch(net, batch_inputs, current_batch);
       total_loss +=
           calculate_batch_loss(net, outputs, batch_targets, current_batch);
     }
 
+    // Test
     int correct = 0;
     for (int i = train_size; i < data.nImages; i += BATCH_SIZE) {
       int current_batch =
           (i + BATCH_SIZE <= data.nImages) ? BATCH_SIZE : (data.nImages - i);
 
       for (int j = 0; j < current_batch; j++) {
-        normalize_images(&data.images[(i + j) * INPUT_SIZE], batch_inputs[j],
-                         1);
+        memcpy(&batch_inputs[j * INPUT_SIZE],
+               &normalized_inputs[(i + j) * INPUT_SIZE],
+               INPUT_SIZE * sizeof(float));
       }
 
       resize_network_batch(net, current_batch);
@@ -192,26 +204,27 @@ int main(int argc, char *argv[]) {
            end_time - start_time);
   }
 
-  // Random test image prediction
+  // Random test image
   int idx = train_size + rand() % test_size;
   printf("\nRandom Test Image (True Label: %d):\n", data.labels[idx]);
   display_image(&data.images[idx * INPUT_SIZE]);
 
-  float *img = batch_inputs[0];
-  normalize_images(&data.images[idx * INPUT_SIZE], img, 1);
-  int predicted = predict_batch(net, &img, 1)[0];
-  printf("Predicted Label: %d\n", predicted);
+  float *single_input = malloc(INPUT_SIZE * sizeof(float));
+  memcpy(single_input, &normalized_inputs[idx * INPUT_SIZE],
+         INPUT_SIZE * sizeof(float));
+  int *prediction = predict_batch(net, single_input, 1);
+  printf("Predicted Label: %d\n", prediction[0]);
 
-
-  // Free
-  for (int i = 0; i < BATCH_SIZE; i++) {
-    free(batch_inputs[i]);
-    free(batch_targets[i]);
-  }
+  // Free memory
   free(batch_inputs);
   free(batch_targets);
+  free(single_input);
+  free(prediction);
+  free(normalized_inputs);
+  free(one_hot_labels);
   free_network(net);
   free(data.images);
   free(data.labels);
+
   return 0;
 }
