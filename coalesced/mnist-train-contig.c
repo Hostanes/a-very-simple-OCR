@@ -1,5 +1,4 @@
-
-#include "batched/nnlib.h"
+#include "lib/nnlib.h"
 #include <math.h>
 #include <omp.h>
 #include <stdio.h>
@@ -14,7 +13,7 @@
 #define LEARNING_RATE 0.0005f
 #define MOMENTUM 0.9f
 #define EPOCHS 5
-#define BATCH_SIZE 32
+#define BATCH_SIZE 64
 #define IMAGE_SIZE 28
 #define TRAIN_SPLIT 0.8
 #define PRINT_INTERVAL 1000
@@ -108,120 +107,105 @@ void print_usage(const char *program_name) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc != 2) {
-    print_usage(argv[0]);
-    return 1;
-  }
 
-  const char *output_filename = argv[1];
+  srand(42);
+
   InputData_t data = {0};
-  srand(time(NULL));
+  double start_time, end_time;
+  double time_taken;
 
-  int layer_Sizes[4] = {INPUT_SIZE, 512, HIDDEN_SIZE, OUTPUT_SIZE};
+  int layer_Sizes[3] = {512, 256, 10};
+  int num_Layers = 3;
   ActivationFunc activations[3] = {relu, relu, softmax_placeholder};
   ActivationDerivative derivatives[3] = {relu_derivative, relu_derivative,
                                          NULL};
 
+  srand(time(NULL));
   NeuralNetwork_t *net =
-      create_network(layer_Sizes, 4, activations, derivatives, LEARNING_RATE,
-                     MOMENTUM, BATCH_SIZE);
+      create_network(INPUT_SIZE, layer_Sizes, num_Layers, activations,
+                     derivatives, LEARNING_RATE, MOMENTUM);
 
   read_mnist_images(TRAIN_IMG_PATH, &data.images, &data.nImages);
   read_mnist_labels(TRAIN_LBL_PATH, &data.labels, &data.nImages);
-  shuffle_data(data.images, data.labels, data.nImages);
+
+  // shuffle_data(data.images, data.labels, data.nImages);
 
   int train_size = (int)(data.nImages * TRAIN_SPLIT);
   int test_size = data.nImages - train_size;
 
-  // Preprocess inputs and labels
-  float *normalized_inputs = malloc(data.nImages * INPUT_SIZE * sizeof(float));
-  normalize_images(data.images, normalized_inputs, data.nImages);
+  float img[INPUT_SIZE];
+  float target[OUTPUT_SIZE];
 
-  float *one_hot_labels = malloc(train_size * OUTPUT_SIZE * sizeof(float));
-  for (int i = 0; i < train_size; i++) {
-    memset(&one_hot_labels[i * OUTPUT_SIZE], 0, OUTPUT_SIZE * sizeof(float));
-    one_hot_labels[i * OUTPUT_SIZE + data.labels[i]] = 1.0f;
-  }
+  // Pick a random test image
+  int idx = train_size + rand() % test_size;
+  unsigned char *sample_img = &data.images[idx * INPUT_SIZE];
+  int true_label = data.labels[idx];
 
-  // Allocate batch memory
-  float *batch_inputs = malloc(BATCH_SIZE * INPUT_SIZE * sizeof(float));
-  float *batch_targets = malloc(BATCH_SIZE * OUTPUT_SIZE * sizeof(float));
+  printf("\nRandom Test Image (True Label: %d):\n", true_label);
+  display_image(sample_img);
 
   printf("Starting training...\n");
-  printf("Model will be saved to: %s\n", output_filename);
 
   for (int epoch = 0; epoch < EPOCHS; epoch++) {
-    double start_time = omp_get_wtime();
+    start_time = omp_get_wtime();
     float total_loss = 0;
 
-    for (int i = 0; i < train_size; i += BATCH_SIZE) {
-      int current_batch =
-          (i + BATCH_SIZE <= train_size) ? BATCH_SIZE : (train_size - i);
+    for (int i = 0; i < train_size; i++) {
+      normalize_images(&data.images[i * INPUT_SIZE], img, 1);
 
-      for (int j = 0; j < current_batch; j++) {
-        memcpy(&batch_inputs[j * INPUT_SIZE],
-               &normalized_inputs[(i + j) * INPUT_SIZE],
-               INPUT_SIZE * sizeof(float));
-        memcpy(&batch_targets[j * OUTPUT_SIZE],
-               &one_hot_labels[(i + j) * OUTPUT_SIZE],
-               OUTPUT_SIZE * sizeof(float));
-      }
+      memset(target, 0, sizeof(target));
+      target[data.labels[i]] = 1.0f;
 
-      resize_network_batch(net, current_batch);
-      train_batch(net, batch_inputs, batch_targets, current_batch);
-
-      float *outputs = forward_pass_batch(net, batch_inputs, current_batch);
-      total_loss +=
-          calculate_batch_loss(net, outputs, batch_targets, current_batch);
+      backward_Pass(net, img, target); // Replaces forward + train
+      float *output = net->A_values + net->A_Offsets[net->num_layers - 1];
+      total_loss += -logf(output[data.labels[i]] + 1e-10f);
     }
 
-    // Test
     int correct = 0;
-    for (int i = train_size; i < data.nImages; i += BATCH_SIZE) {
-      int current_batch =
-          (i + BATCH_SIZE <= data.nImages) ? BATCH_SIZE : (data.nImages - i);
+    for (int i = train_size; i < data.nImages; i++) {
+      normalize_images(&data.images[i * INPUT_SIZE], img, 1);
+      forward_Pass(net, img);
+      float *output = net->A_values + net->A_Offsets[net->num_layers - 1];
 
-      for (int j = 0; j < current_batch; j++) {
-        memcpy(&batch_inputs[j * INPUT_SIZE],
-               &normalized_inputs[(i + j) * INPUT_SIZE],
-               INPUT_SIZE * sizeof(float));
+      int predicted = 0;
+      float max_prob = output[0];
+      for (int j = 1; j < OUTPUT_SIZE; j++) {
+        if (output[j] > max_prob) {
+          max_prob = output[j];
+          predicted = j;
+        }
       }
 
-      resize_network_batch(net, current_batch);
-      int *predictions = predict_batch(net, batch_inputs, current_batch);
-
-      for (int j = 0; j < current_batch; j++) {
-        if (predictions[j] == data.labels[i + j])
-          correct++;
-      }
-
-      free(predictions);
+      if (predicted == data.labels[i])
+        correct++;
     }
 
-    double end_time = omp_get_wtime();
+    end_time = omp_get_wtime();
+    time_taken = end_time - start_time;
+
     printf("Epoch %d, Accuracy: %.2f%%, Avg Loss: %.4f, Time: %.2f seconds\n",
            epoch + 1, (float)correct / test_size * 100, total_loss / train_size,
-           end_time - start_time);
+           time_taken);
   }
 
-  // Random test image
-  int idx = train_size + rand() % test_size;
-  printf("\nRandom Test Image (True Label: %d):\n", data.labels[idx]);
-  display_image(&data.images[idx * INPUT_SIZE]);
+  // Evaluate and display prediction for random test image
+  for (int k = 0; k < INPUT_SIZE; k++)
+    img[k] = sample_img[k] / 255.0f;
 
-  float *single_input = malloc(INPUT_SIZE * sizeof(float));
-  memcpy(single_input, &normalized_inputs[idx * INPUT_SIZE],
-         INPUT_SIZE * sizeof(float));
-  int *prediction = predict_batch(net, single_input, 1);
-  printf("Predicted Label: %d\n", prediction[0]);
+  forward_Pass(net, img);
+  float *final_output = net->A_values + net->A_Offsets[net->num_layers - 1];
 
-  // Free memory
-  free(batch_inputs);
-  free(batch_targets);
-  free(single_input);
-  free(prediction);
-  free(normalized_inputs);
-  free(one_hot_labels);
+  int predicted = 0;
+  float max_val = final_output[0];
+  for (int i = 1; i < OUTPUT_SIZE; i++) {
+    if (final_output[i] > max_val) {
+      max_val = final_output[i];
+      predicted = i;
+    }
+  }
+
+  printf("Predicted Label: %d\n", predicted);
+
   free_network(net);
   free(data.images);
   free(data.labels);

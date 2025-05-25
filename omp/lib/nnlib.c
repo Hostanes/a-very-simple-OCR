@@ -7,6 +7,10 @@
 
 #include "nnlib.h"
 
+#ifndef VERBOSE
+#define printf(fmt, ...) (0)
+#endif
+
 float relu(float x) { return x > 0 ? x : 0; }
 
 float relu_derivative(float x) { return x > 0 ? 1 : 0; }
@@ -114,12 +118,21 @@ void free_network(NeuralNetwork_t *net) {
 }
 
 float *forward_pass(NeuralNetwork_t *net, float *input) {
+  printf("\n=== FORWARD PASS ===\n");
   float *current_input = input;
 
   for (int i = 0; i < net->num_layers; i++) {
     Layer_t *layer = &net->layers[i];
+    printf("\nLayer %d (Input size: %d, Output size: %d)\n", i,
+           layer->input_size, layer->output_size);
 
-// Parallelize the dot product
+    // Print first 3 weights and biases for debugging
+    printf("Weights[0:2]: [%.4f, %.4f, %.4f...]\n", layer->weights[0],
+           layer->weights[1], layer->weights[2]);
+    printf("Biases[0:2]: [%.4f, %.4f, %.4f...]\n", layer->biases[0],
+           layer->biases[1], layer->biases[2]);
+
+// Parallelized matrix multiplication
 #pragma omp parallel for
     for (int j = 0; j < layer->output_size; j++) {
       float sum = layer->biases[j];
@@ -127,16 +140,27 @@ float *forward_pass(NeuralNetwork_t *net, float *input) {
         sum += current_input[k] * layer->weights[k * layer->output_size + j];
       }
       layer->input[j] = sum;
+
+      // Debug print for first few neurons
+      if (j < 3) {
+        printf("  Neuron %d pre-activation (z): %.4f\n", j, layer->input[j]);
+      }
     }
 
-    // Parallelize activation
+    // Activation
     if (layer->activation == softmax_placeholder) {
       memcpy(layer->output, layer->input, layer->output_size * sizeof(float));
       softmax(layer->output, layer->output_size);
+      printf("Softmax output[0:2]: [%.4f, %.4f, %.4f...]\n", layer->output[0],
+             layer->output[1], layer->output[2]);
     } else {
 #pragma omp parallel for
       for (int j = 0; j < layer->output_size; j++) {
         layer->output[j] = layer->activation(layer->input[j]);
+        if (j < 3) {
+          printf("  Neuron %d post-activation (a): %.4f\n", j,
+                 layer->output[j]);
+        }
       }
     }
 
@@ -146,34 +170,44 @@ float *forward_pass(NeuralNetwork_t *net, float *input) {
 }
 
 void backward_pass(NeuralNetwork_t *net, float *input, float *target) {
+  printf("\n=== BACKWARD PASS ===\n");
   float *output = forward_pass(net, input);
   Layer_t *output_layer = &net->layers[net->num_layers - 1];
 
-  // Allocate deltas
+  printf("\n=== BACKWARD PASS ===\n");
+
+  // Allocate and initialize deltas
   float **deltas = malloc(net->num_layers * sizeof(float *));
   for (int i = 0; i < net->num_layers; i++) {
     deltas[i] = calloc(net->layers[i].output_size, sizeof(float));
   }
 
-  // PARALLEL
+  // Output layer error calculation
+  printf("\nOutput Layer Errors:\n");
   if (output_layer->activation == softmax_placeholder) {
 #pragma omp parallel for
     for (int i = 0; i < output_layer->output_size; i++) {
       deltas[net->num_layers - 1][i] = output_layer->output[i] - target[i];
+      printf("  Output %d: (%.4f - %.4f) = %.4f\n", i, output_layer->output[i],
+             target[i], deltas[net->num_layers - 1][i]);
     }
   } else {
 #pragma omp parallel for
     for (int i = 0; i < output_layer->output_size; i++) {
       float error = output_layer->output[i] - target[i];
-      deltas[net->num_layers - 1][i] =
-          error * output_layer->activation_derivative(output_layer->input[i]);
+      float deriv = output_layer->activation_derivative(output_layer->input[i]);
+      deltas[net->num_layers - 1][i] = error * deriv;
+      printf("  Output %d: (%.4f - %.4f) * %.4f = %.4f\n", i,
+             output_layer->output[i], target[i], deriv,
+             deltas[net->num_layers - 1][i]);
     }
   }
 
-  // PARALLEL
+  // Backpropagate errors
   for (int l = net->num_layers - 2; l >= 0; l--) {
     Layer_t *current = &net->layers[l];
     Layer_t *next = &net->layers[l + 1];
+    printf("\nBackpropagating through layer %d\n", l);
 
 #pragma omp parallel for
     for (int i = 0; i < current->output_size; i++) {
@@ -181,15 +215,32 @@ void backward_pass(NeuralNetwork_t *net, float *input, float *target) {
       for (int j = 0; j < next->output_size; j++) {
         error += next->weights[i * next->output_size + j] * deltas[l + 1][j];
       }
-      deltas[l][i] = error * current->activation_derivative(current->input[i]);
+      float deriv = current->activation_derivative(current->input[i]);
+      deltas[l][i] = error * deriv;
+
+      if (i < 3) {
+        printf("  Neuron %d: error=%.4f, deriv=%.4f, delta=%.4f\n", i, error,
+               deriv, deltas[l][i]);
+      }
     }
   }
 
+  // Update weights and biases
   float *prev_output = input;
   for (int l = 0; l < net->num_layers; l++) {
     Layer_t *layer = &net->layers[l];
+    printf("\nUpdating layer %d weights and biases\n", l);
 
-// PARALLEL
+    // Print pre-update values
+    printf("Pre-update weights[0:2]: [%.4f, %.4f, %.4f...]\n",
+           layer->weights[0], layer->weights[1], layer->weights[2]);
+    printf("Pre-update biases[0:2]: [%.4f, %.4f, %.4f...]\n", layer->biases[0],
+           layer->biases[1], layer->biases[2]);
+    printf("Pre-update weight momentum[0:2]: [%.4f, %.4f, %.4f...]\n",
+           layer->weight_momentum[0], layer->weight_momentum[1],
+           layer->weight_momentum[2]);
+
+// Update weights
 #pragma omp parallel for
     for (int i = 0; i < layer->input_size; i++) {
       for (int j = 0; j < layer->output_size; j++) {
@@ -199,15 +250,26 @@ void backward_pass(NeuralNetwork_t *net, float *input, float *target) {
             net->momentum * layer->weight_momentum[idx] +
             net->learning_rate * gradient;
         layer->weights[idx] -= layer->weight_momentum[idx];
+
+        if (idx < 3) {
+          printf(
+              "  Weight update %d: grad=%.4f, new_mom=%.4f, new_weight=%.4f\n",
+              idx, gradient, layer->weight_momentum[idx], layer->weights[idx]);
+        }
       }
     }
 
-// PARALLEL
+// Update biases
 #pragma omp parallel for
     for (int j = 0; j < layer->output_size; j++) {
       layer->bias_momentum[j] = net->momentum * layer->bias_momentum[j] +
                                 net->learning_rate * deltas[l][j];
       layer->biases[j] -= layer->bias_momentum[j];
+
+      if (j < 3) {
+        printf("  Bias update %d: delta=%.4f, new_mom=%.4f, new_bias=%.4f\n", j,
+               deltas[l][j], layer->bias_momentum[j], layer->biases[j]);
+      }
     }
 
     prev_output = layer->output;

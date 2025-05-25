@@ -1,4 +1,4 @@
-#include "lib/nnlib.h"
+#include "serial/lib/nnlib.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
 #include <stdbool.h>
