@@ -32,7 +32,7 @@ fi
 output_file="bin/${base_name}.out"
 
 echo "Compiling $input_file with $nnlib_path..."
-gcc "$input_file" "$nnlib_path" -O3 -march=native -ffast-math -lm -fopenmp -o "$output_file" -g
+gcc "$input_file" "$nnlib_path" --fast-math -O3 -march=native -lm -fopenmp -o "$output_file" -g
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful. Running program..."

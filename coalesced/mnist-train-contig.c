@@ -141,6 +141,8 @@ int main(int argc, char *argv[]) {
   unsigned char *sample_img = &data.images[idx * INPUT_SIZE];
   int true_label = data.labels[idx];
 
+  printf("Number of images: %d\n", train_size);
+
   printf("\nRandom Test Image (True Label: %d):\n", true_label);
   display_image(sample_img);
 
@@ -161,6 +163,9 @@ int main(int argc, char *argv[]) {
       total_loss += -logf(output[data.labels[i]] + 1e-10f);
     }
 
+    end_time = omp_get_wtime();
+    time_taken = end_time - start_time;
+
     int correct = 0;
     for (int i = train_size; i < data.nImages; i++) {
       normalize_images(&data.images[i * INPUT_SIZE], img, 1);
@@ -179,9 +184,6 @@ int main(int argc, char *argv[]) {
       if (predicted == data.labels[i])
         correct++;
     }
-
-    end_time = omp_get_wtime();
-    time_taken = end_time - start_time;
 
     printf("Epoch %d, Accuracy: %.2f%%, Avg Loss: %.4f, Time: %.2f seconds\n",
            epoch + 1, (float)correct / test_size * 100, total_loss / train_size,

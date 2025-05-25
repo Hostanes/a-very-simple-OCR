@@ -266,8 +266,11 @@ void forward_Pass(NeuralNetwork_t *net, float *input) {
 #pragma omp parallel for
     for (int o = 0; o < output_size; o++) {
       float z = biases[o];
+      const float *weight_row =
+          weights + o; // Point to start of this output's weights
       for (int i = 0; i < input_size; i++) {
-        z += weights[i * output_size + o] * prev_a_values[i];
+        z += weight_row[i * output_size] *
+             prev_a_values[i]; // Stride by output_size
       }
       z_values[o] = z;
     }
