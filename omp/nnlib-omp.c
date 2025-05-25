@@ -3,7 +3,6 @@
   parallel:
   - forward
   - backward
-  - NOT softmax, mish me7erze
 */
 
 #include "nnlib.h"
