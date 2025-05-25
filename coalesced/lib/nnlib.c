@@ -263,7 +263,6 @@ void forward_Pass(NeuralNetwork_t *net, float *input) {
            biases[2]);
 
     // Compute Z = W * A_prev + b
-
 #pragma omp parallel for
     for (int o = 0; o < output_size; o++) {
       float z = biases[o];
