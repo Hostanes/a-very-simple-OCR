@@ -36,7 +36,7 @@ gcc "$input_file" "$nnlib_path" --fast-math -O3 -march=native -lm -fopenmp -o "$
 
 if [ $? -eq 0 ]; then
     echo "Compilation successful. Running program..."
-    ./"$output_file" coal.nn
+    ./"$output_file" model.nn
 else
     echo "Compilation failed"
     exit 1

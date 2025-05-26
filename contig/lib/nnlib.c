@@ -7,6 +7,8 @@
 #define printf(fmt, ...) (0)
 #endif
 
+#define ALIGNMENT 64
+
 // =====================================================
 //                    HELPER FUNCS
 // =====================================================
@@ -97,16 +99,42 @@ NeuralNetwork_t *create_network(int input_size, int *layer_sizes,
       calculate_total_activations(input_size, layer_sizes, num_layers);
 
   // Allocate buffers
-  net->weights = (float *)calloc(net->num_Of_Weights, sizeof(float));
-  net->biases = (float *)calloc(net->num_Of_Biases, sizeof(float));
-  net->Z_values = (float *)calloc(net->num_Of_Z, sizeof(float));
-  net->A_values = (float *)calloc(net->num_Of_A, sizeof(float));
-  net->weight_gradients = (float *)calloc(net->num_Of_Weights, sizeof(float));
-  net->bias_gradients = (float *)calloc(net->num_Of_Biases, sizeof(float));
-  net->weight_Momentum = (float *)calloc(net->num_Of_Weights, sizeof(float));
-  net->bias_Momentum = (float *)calloc(net->num_Of_Biases, sizeof(float));
 
-  // Allocate offset arrays
+  // Allocate aligned buffers for all major arrays
+  net->weights =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Weights * sizeof(float));
+  memset(net->weights, 0, net->num_Of_Weights * sizeof(float));
+
+  net->biases =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Biases * sizeof(float));
+  memset(net->biases, 0, net->num_Of_Biases * sizeof(float));
+
+  net->Z_values =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Z * sizeof(float));
+  memset(net->Z_values, 0, net->num_Of_Z * sizeof(float));
+
+  net->A_values =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_A * sizeof(float));
+  memset(net->A_values, 0, net->num_Of_A * sizeof(float));
+
+  net->weight_gradients =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Weights * sizeof(float));
+  memset(net->weight_gradients, 0, net->num_Of_Weights * sizeof(float));
+
+  net->bias_gradients =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Biases * sizeof(float));
+  memset(net->bias_gradients, 0, net->num_Of_Biases * sizeof(float));
+
+  net->weight_Momentum =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Weights * sizeof(float));
+  memset(net->weight_Momentum, 0, net->num_Of_Weights * sizeof(float));
+
+  net->bias_Momentum =
+      (float *)aligned_alloc(ALIGNMENT, net->num_Of_Biases * sizeof(float));
+  memset(net->bias_Momentum, 0, net->num_Of_Biases * sizeof(float));
+
+  // Offset arrays don't need alignment (they're small and accessed
+  // sequentially)
   net->weight_Offsets = (int *)calloc(num_layers, sizeof(int));
   net->bias_Offsets = (int *)calloc(num_layers, sizeof(int));
   net->Z_Offsets = (int *)calloc(num_layers, sizeof(int));
@@ -199,34 +227,37 @@ float relu_derivative(float x) { return x > 0 ? 1 : 0; }
 float softmax_placeholder(float x) { return x; }
 
 void softmax(float *array, int size) {
-  // max value
+
   float max_val = array[0];
+#pragma omp parallel for reduction(max : max_val)
   for (int i = 1; i < size; i++) {
-    if (array[i] > max_val) {
+    if (array[i] > max_val)
       max_val = array[i];
-    }
   }
 
-  // calculate sum: e^{xi - max}
   float sum = 0.0f;
+#pragma omp parallel for reduction(+ : sum)
   for (int i = 0; i < size; i++) {
-    array[i] = expf(array[i] - max_val); // Subtract max for numerical stability
+    array[i] = expf(array[i] - max_val);
     sum += array[i];
   }
 
-  // normalize
+#pragma omp parallel for
   for (int i = 0; i < size; i++) {
     array[i] /= sum;
   }
 }
 
 void softmax_derivative(float *output, float *gradient, int size) {
+  float sum = 0.0f;
+#pragma omp parallel for reduction(+ : sum)
+  for (int j = 0; j < size; j++) {
+    sum += output[j] * gradient[j];
+  }
+
+#pragma omp parallel for
   for (int i = 0; i < size; i++) {
-    gradient[i] = 0;
-    for (int j = 0; j < size; j++) {
-      float delta = (i == j) ? 1 : 0;
-      gradient[i] += output[i] * (delta - output[j]) * gradient[j];
-    }
+    gradient[i] = output[i] * (gradient[i] - sum);
   }
 }
 
@@ -268,6 +299,8 @@ void forward_Pass(NeuralNetwork_t *net, float *input) {
       float z = biases[o];
       const float *weight_row =
           weights + o; // Point to start of this output's weights
+
+#pragma omp simd reduction(+ : z)
       for (int i = 0; i < input_size; i++) {
         z += weight_row[i * output_size] *
              prev_a_values[i]; // Stride by output_size
