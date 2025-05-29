@@ -30,8 +30,9 @@ int main() {
   NeuralNetwork_t *serial_model = load_Network("serial.nn");
   NeuralNetwork_t *omp_model = load_Network("omp.nn");
   NeuralNetwork_t *ocl_model = load_Network("ocl2.nn");
+  NeuralNetwork_t *mpi_model = load_Network("mnistmpi.exe");
 
-  if (!serial_model || !omp_model || !ocl_model) {
+  if (!serial_model || !omp_model || !ocl_model || !mpi_model) {
     fprintf(stderr, "Failed to load one or more models\n");
     return 1;
   }
@@ -58,21 +59,23 @@ int main() {
   float *serial_output = forward_pass(serial_model, normalized_input);
   float *omp_output = forward_pass(omp_model, normalized_input);
   float *ocl_output = forward_pass(ocl_model, normalized_input);
+  float *mpi_output = forward_pass(mpi_model, normalized_input);
 
   // Print comparison
   printf("\nModel Output Comparison:\n");
-  printf("%-10s %-15s %-15s %-15s\n", "Class", "Serial", "OpenMP", "OpenCL");
+  printf("%-10s %-15s %-15s %-15s %-15s\n", "Class", "Serial", "OpenMP", "OpenCL", "MPI");
   printf("------------------------------------------------------------\n");
 
   for (int i = 0; i < 10; i++) {
-    printf("%-10d %-15.6f %-15.6f %-15.6f\n", i, serial_output[i],
-           omp_output[i], ocl_output[i]);
+    printf("%-10d %-15.6f %-15.6f %-15.6f %-15.6f\n", i, serial_output[i],
+           omp_output[i], ocl_output[i], mpi_output[i]); ;
   }
 
   // Get predicted classes
   int serial_pred = predict(serial_model, normalized_input);
   int omp_pred = predict(omp_model, normalized_input);
   int ocl_pred = predict(ocl_model, normalized_input);
+  int mpi_pred = predict(mpi_model, normalized_input);
 
   printf("\nPredictions:\n");
   printf("Serial Model:  %d (confidence: %.2f%%)\n", serial_pred,
@@ -81,12 +84,15 @@ int main() {
          omp_output[omp_pred] * 100);
   printf("OpenCL Model:  %d (confidence: %.2f%%)\n", ocl_pred,
          ocl_output[ocl_pred] * 100);
+  printf("MPI Model:     %d (confidence: %.2f%%)\n", mpi_pred,
+         mpi_output[mpi_pred] * 100);
   printf("True Label:    %d\n", true_label);
 
   // Clean up
   free_network(serial_model);
   free_network(omp_model);
   free_network(ocl_model);
+  free_network(mpi_model);
   free(test_data.images);
   free(test_data.labels);
 
