@@ -119,6 +119,7 @@ void backward_Pass(NeuralNetwork_t *net, float *input, float *target);
 float relu(float x);
 float relu_derivative(float x);
 void softmax(float *array, int size);
+void softmax_into(const float *input, float *output, int size);
 void softmax_derivative(float *output, float *gradient, int size);
 float softmax_placeholder(float x);
 

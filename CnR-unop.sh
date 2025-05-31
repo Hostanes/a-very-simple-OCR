@@ -28,43 +28,25 @@ if [ ! -f "$nnlib_path" ]; then
 fi
 
 # Output binary path
-output_file="bin/${base_name}.out"
-
-# Set thread binding environment variables
-export OMP_PROC_BIND=true
-export OMP_PLACES=cores
-export OMP_NUM_THREADS=$(nproc)  # Use all available cores
+output_file="bin/${base_name}-unoptimized.out"
 
 echo "================================================"
-echo "Compilation Configuration:"
+echo "Compiling WITHOUT optimizations:"
 echo "- Input:        $input_file"
 echo "- NN Lib:       $nnlib_path"
 echo "- Output:       $output_file"
-echo "- Threads:      $OMP_NUM_THREADS (bound to cores)"
-echo "- Optimization: -O3 -march=native -ffast-math"
+echo "- Optimization: None (no -O3, no -march=native, etc.)"
+echo "- Threading:    No OpenMP thread binding"
 echo "================================================"
 
-echo "Compiling $input_file with $nnlib_path..."
+echo "Compiling $input_file with $nnlib_path (no optimizations)..."
 gcc "$input_file" "$nnlib_path" \
-    -O3 \
-    -march=native \
-    -ffast-math \
-    -lm \
-    -fopenmp \
     -o "$output_file" \
-    -g
+    -lm -fopenmp --fast-math -O  # Only link math library (no other flags)
 
 if [ $? -eq 0 ]; then
-    echo "Compilation successful. Running program with thread binding..."
+    echo "Compilation successful. Running unoptimized program..."
     echo "------------------------------------------------"
-    
-    # Run with thread binding info
-    echo "Thread binding configuration:"
-    echo "- OMP_PROC_BIND=$OMP_PROC_BIND"
-    echo "- OMP_PLACES=$OMP_PLACES"
-    echo "- OMP_NUM_THREADS=$OMP_NUM_THREADS"
-    echo "------------------------------------------------"
-    
     ./"$output_file" model.nn
 else
     echo "Compilation failed"

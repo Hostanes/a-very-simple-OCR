@@ -7,7 +7,7 @@
 #define printf(fmt, ...) (0)
 #endif
 
-#define ALIGNMENT 64
+#define ALIGNMENT 32
 
 // =====================================================
 //                    HELPER FUNCS
@@ -220,6 +220,24 @@ void free_network(NeuralNetwork_t *net) {
 //                    ACTIVATION FUNCS
 // =====================================================
 
+// Approximate exp(x) with ~1% relative error using a polynomial and bit hack
+inline float fast_exp(float x) {
+  union {
+    uint32_t i;
+    float f;
+  } v;
+
+  // Constants based on IEEE float magic (2^23 * log2(e) ≈ 12102203)
+  float a = 12102203.0f;
+  float b = 1065353216.0f;
+
+  if (x < -100.0f)
+    return 0.0f; // prevent underflow
+
+  v.i = (uint32_t)(a * x + b);
+  return v.f;
+}
+
 float relu(float x) { return x > 0 ? x : 0; }
 
 float relu_derivative(float x) { return x > 0 ? 1 : 0; }
@@ -238,13 +256,37 @@ void softmax(float *array, int size) {
   float sum = 0.0f;
 #pragma omp parallel for reduction(+ : sum)
   for (int i = 0; i < size; i++) {
-    array[i] = expf(array[i] - max_val);
+    array[i] = fast_exp(array[i] - max_val);
     sum += array[i];
   }
 
 #pragma omp parallel for
   for (int i = 0; i < size; i++) {
     array[i] /= sum;
+  }
+}
+
+void softmax_into(const float *input, float *output, int size) {
+  // Find the max value for numerical stability
+  float max_val = input[0];
+#pragma omp parallel for reduction(max : max_val)
+  for (int i = 1; i < size; i++) {
+    if (input[i] > max_val)
+      max_val = input[i];
+  }
+
+  // Compute exponentials and their sum
+  float sum = 0.0f;
+#pragma omp parallel for reduction(+ : sum)
+  for (int i = 0; i < size; i++) {
+    output[i] = fast_exp(input[i] - max_val);
+    sum += output[i];
+  }
+
+  // Normalize to get probabilities
+#pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    output[i] /= sum;
   }
 }
 
@@ -314,8 +356,7 @@ void forward_Pass(NeuralNetwork_t *net, float *input) {
     // Apply activation
     if (l == net->num_layers - 1 &&
         net->activations[l] == softmax_placeholder) {
-      softmax(z_values, output_size);
-      memcpy(a_values, z_values, output_size * sizeof(float));
+      softmax_into(z_values, a_values, output_size);
     } else {
 #pragma omp parallel for
       for (int o = 0; o < output_size; o++) {
